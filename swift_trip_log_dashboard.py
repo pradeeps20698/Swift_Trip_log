@@ -68,16 +68,25 @@ def load_triplog_data():
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
 def load_targets():
     """Load target SQR data from JSON file"""
     try:
-        with open('/Users/swiftroadlink/Documents/DE/sob_targets.json', 'r') as f:
+        with open('/Users/swiftroadlink/Documents/Dashboard/Swift trip log/sob_targets.json', 'r') as f:
             targets = json.load(f)
         return targets
-    except Exception as e:
-        st.error(f"Error loading targets: {e}")
+    except:
         return {}
+
+
+def save_targets(targets):
+    """Save target SQR data to JSON file"""
+    try:
+        with open('/Users/swiftroadlink/Documents/Dashboard/Swift trip log/sob_targets.json', 'w') as f:
+            json.dump(targets, f, indent=2)
+        return True
+    except Exception as e:
+        st.error(f"Error saving targets: {e}")
+        return False
 
 
 def get_client_category(party_name):
@@ -85,7 +94,7 @@ def get_client_category(party_name):
     if pd.isna(party_name) or party_name == "":
         return "Other"
     party_upper = str(party_name).upper()
-    if "HONDA" in party_upper:
+    if "HONDA" in party_upper or "TAPUKERA" in party_upper:
         return "Honda"
     elif "MAHINDRA" in party_upper or "M & M" in party_upper or "M&M" in party_upper or "MSTC" in party_upper or "TRAIN LOAD" in party_upper:
         return "M & M"
@@ -157,6 +166,36 @@ def main():
     if st.sidebar.button("🔄 Refresh Data"):
         st.cache_data.clear()
         st.rerun()
+
+    # Target SQR Update Section
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📊 Update Target SQR")
+
+    with st.sidebar.expander("Set Target SQR", expanded=False):
+        # Get unique parties for target setting
+        unique_parties = sorted(df['DisplayParty'].dropna().unique().tolist())
+        unique_parties = [p for p in unique_parties if p != '']
+
+        # Select party to update
+        target_party = st.selectbox("Select Party", [''] + unique_parties, key='target_party')
+
+        if target_party:
+            current_target = targets.get(target_party, 0)
+            new_target = st.number_input("Target SQR", min_value=0, value=int(current_target), key='new_target')
+
+            if st.button("💾 Save Target"):
+                targets[target_party] = new_target
+                if save_targets(targets):
+                    st.success(f"Target saved for {target_party}: {new_target}")
+                    st.rerun()
+
+        # Show current targets
+        st.markdown("**Current Targets:**")
+        if targets:
+            for party, target in sorted(targets.items()):
+                st.text(f"{party[:20]}: {target}")
+        else:
+            st.text("No targets set")
 
     # Filter data for selected month
     month_start = selected_month.replace(day=1)
@@ -292,10 +331,13 @@ def main():
             'Glovis': '#f59e0b',
             'Tata': '#06b6d4',
             'Market Load': '#ec4899',
-            'Other': '#6b7280'
+            'Other': '#6b7280',
+            'Grand': '#1e40af'
         }
 
         final_rows = []
+        grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0}
+
         for category in category_order:
             cat_df = summary[summary['category'] == category].copy()
             if len(cat_df) > 0:
@@ -317,22 +359,49 @@ def main():
                         'category': category
                     })
 
-                # Add category total
-                total_target = targets.get(f"{category} - Total", sum(targets.get(p, 0) for p in cat_df['Party']))
-                final_rows.append({
-                    'Client - Wise': f"{category} - Total",
-                    'Target SQR': int(total_target) if total_target else int(cat_df['Trips'].sum()),
-                    'Own': int(cat_df['Own_Cars'].sum()),
-                    'Vendor': int(cat_df['Vendor_Cars'].sum()),
-                    'Total': int(cat_df['Total_Cars'].sum()),
-                    'Own_F': cat_df['Own_Freight'].sum(),
-                    'Vendor_F': cat_df['Vendor_Freight'].sum(),
-                    'Total_F': cat_df['Total_Freight'].sum(),
-                    'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
-                    'Freight_Comp': cat_df['Compare_Freight'].sum(),
-                    'is_total': True,
-                    'category': category
-                })
+                # Add category total (skip for Market Load and Other)
+                if category not in ['Market Load', 'Other']:
+                    total_target = targets.get(f"{category} - Total", sum(targets.get(p, 0) for p in cat_df['Party']))
+                    final_rows.append({
+                        'Client - Wise': f"{category} - Total",
+                        'Target SQR': int(total_target) if total_target else int(cat_df['Trips'].sum()),
+                        'Own': int(cat_df['Own_Cars'].sum()),
+                        'Vendor': int(cat_df['Vendor_Cars'].sum()),
+                        'Total': int(cat_df['Total_Cars'].sum()),
+                        'Own_F': cat_df['Own_Freight'].sum(),
+                        'Vendor_F': cat_df['Vendor_Freight'].sum(),
+                        'Total_F': cat_df['Total_Freight'].sum(),
+                        'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
+                        'Freight_Comp': cat_df['Compare_Freight'].sum(),
+                        'is_total': True,
+                        'category': category
+                    })
+
+                # Accumulate grand total
+                grand_total['Own'] += int(cat_df['Own_Cars'].sum())
+                grand_total['Vendor'] += int(cat_df['Vendor_Cars'].sum())
+                grand_total['Total'] += int(cat_df['Total_Cars'].sum())
+                grand_total['Own_F'] += cat_df['Own_Freight'].sum()
+                grand_total['Vendor_F'] += cat_df['Vendor_Freight'].sum()
+                grand_total['Total_F'] += cat_df['Total_Freight'].sum()
+                grand_total['Cars_Comp'] += int(cat_df['Compare_Cars'].sum())
+                grand_total['Freight_Comp'] += cat_df['Compare_Freight'].sum()
+
+        # Add Grand Total row
+        final_rows.append({
+            'Client - Wise': 'Grand Total',
+            'Target SQR': '',
+            'Own': grand_total['Own'],
+            'Vendor': grand_total['Vendor'],
+            'Total': grand_total['Total'],
+            'Own_F': grand_total['Own_F'],
+            'Vendor_F': grand_total['Vendor_F'],
+            'Total_F': grand_total['Total_F'],
+            'Cars_Comp': grand_total['Cars_Comp'],
+            'Freight_Comp': grand_total['Freight_Comp'],
+            'is_total': True,
+            'category': 'Grand'
+        })
 
         # Create display dataframe
         display_data = []
