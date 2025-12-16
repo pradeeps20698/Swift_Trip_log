@@ -256,7 +256,11 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
-    # Tabs
+    # Initialize session state for tab selection
+    if 'selected_tab' not in st.session_state:
+        st.session_state.selected_tab = 0
+
+    # Tabs with key to maintain state
     tab1, tab2, tab3 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads"])
 
     with tab1:
@@ -600,53 +604,330 @@ def main():
     with tab2:
         st.markdown("### Daily Loading Details")
 
-        # Daily summary
-        daily_df = month_df.groupby(month_df['LoadingDate'].dt.date).agg({
-            'TLHSNo': 'count',
-            'CarQty': 'sum',
-            'Freight': 'sum',
-            'Distance': 'sum'
-        }).reset_index()
-        daily_df.columns = ['Date', 'Trips', 'Cars', 'Freight', 'Distance']
-        daily_df['Freight'] = daily_df['Freight'].apply(lambda x: f"₹{x/100000:.2f}L")
+        @st.fragment
+        def daily_loading_fragment():
+            # Date filter and summary in one row
+            col_date, col_cars, col_trips_count, col_empty = st.columns([1, 1, 1, 1])
+            with col_date:
+                selected_date = st.date_input("Select Date", datetime.now().date(), key='daily_date_fragment')
 
-        st.dataframe(daily_df, use_container_width=True, height=400)
+            # Filter data for selected date - only loaded trips (with Party Name)
+            daily_data = df[
+                (df['LoadingDateOnly'] == selected_date) &
+                (df['DisplayParty'] != '') &
+                (df['DisplayParty'].notna()) &
+                (df['CarQty'] > 0)
+            ]
 
-        # Chart
-        import plotly.express as px
+            # Total Cars Lifted
+            total_cars_lifted = int(daily_data['CarQty'].sum())
+            total_trips_count = len(daily_data)
 
-        chart_df = month_df.groupby(month_df['LoadingDate'].dt.date).agg({
-            'CarQty': 'sum'
-        }).reset_index()
-        chart_df.columns = ['Date', 'Cars']
+            with col_cars:
+                st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #22c55e, #16a34a); padding: 15px 25px; border-radius: 8px; text-align: center; margin-top: 25px;">
+                    <span style="color: white; font-weight: bold; font-size: 20px;">Total Cars Lifted: {total_cars_lifted}</span>
+                </div>
+                """, unsafe_allow_html=True)
 
-        if not chart_df.empty:
-            fig = px.bar(chart_df, x='Date', y='Cars', title='Daily Cars Loaded')
-            fig.update_layout(template='plotly_dark', height=300)
-            st.plotly_chart(fig, use_container_width=True)
+            with col_trips_count:
+                st.markdown(f"""
+                <div style="background: linear-gradient(90deg, #3b82f6, #2563eb); padding: 15px 25px; border-radius: 8px; text-align: center; margin-top: 25px;">
+                    <span style="color: white; font-weight: bold; font-size: 20px;">Total Trips: {total_trips_count}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Create two columns - Trip Details and Party-wise Summary
+            col_left, col_right = st.columns([3, 1])
+
+            with col_left:
+                st.markdown(f"**Daily Loading Details {selected_date.strftime('%d-%b-%Y')}**")
+
+                if len(daily_data) > 0:
+                    # Prepare trip details table
+                    trip_details = daily_data[['LoadingDate', 'VehicleNo', 'DisplayParty', 'Route', 'CarQty']].copy()
+
+                    # Split Route into Origin and Destination
+                    trip_details['Origin'] = trip_details['Route'].apply(lambda x: x.split(' - ')[0] if ' - ' in str(x) else str(x))
+                    trip_details['Destination'] = trip_details['Route'].apply(lambda x: x.split(' - ')[1] if ' - ' in str(x) and len(x.split(' - ')) > 1 else '')
+
+                    # Build HTML table
+                    html_trips = """
+                    <style>
+                        .trips-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                        .trips-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
+                        .trips-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
+                        .trips-table tr:nth-child(even) { background-color: #1a1f2e; }
+                        .trips-table tr:nth-child(odd) { background-color: #0e1117; }
+                        .trips-table tr:hover { background-color: #2d3748; }
+                    </style>
+                    <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="trips-table">
+                        <thead>
+                            <tr>
+                                <th>S.No.</th>
+                                <th>Date</th>
+                                <th>Vehicle No</th>
+                                <th>Party Name</th>
+                                <th>Origin</th>
+                                <th>Destination</th>
+                                <th>Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    """
+                    total_qty = 0
+                    for idx, (_, row) in enumerate(trip_details.iterrows(), 1):
+                        date_str = row['LoadingDate'].strftime('%d/%m/%Y')
+                        qty = int(row['CarQty'])
+                        total_qty += qty
+                        html_trips += f"""
+                            <tr>
+                                <td>{idx}</td>
+                                <td>{date_str}</td>
+                                <td>{row['VehicleNo']}</td>
+                                <td>{row['DisplayParty']}</td>
+                                <td>{row['Origin']}</td>
+                                <td>{row['Destination']}</td>
+                                <td style="text-align: center;">{qty}</td>
+                            </tr>
+                        """
+                    # Add Grand Total row
+                    html_trips += f"""
+                            <tr style="background-color: #1e40af !important; font-weight: bold;">
+                                <td colspan="6" style="text-align: right; color: white;">Grand Total</td>
+                                <td style="text-align: center; color: #fbbf24; font-size: 15px;">{total_qty}</td>
+                            </tr>
+                        """
+                    html_trips += "</tbody></table></div>"
+                    components.html(html_trips, height=500, scrolling=True)
+                else:
+                    st.info("No trips found for the selected date.")
+
+            with col_right:
+                st.markdown(f"**OEM's Wise Total Loads {selected_date.strftime('%d-%b-%Y')}**")
+
+                if len(daily_data) > 0:
+                    # Party-wise summary
+                    party_summary = daily_data.groupby('DisplayParty').agg({
+                        'TLHSNo': 'count'
+                    }).reset_index()
+                    party_summary.columns = ['Party Name', 'Trip Count']
+                    party_summary = party_summary[party_summary['Party Name'] != '']
+                    party_summary = party_summary.sort_values('Trip Count', ascending=False)
+
+                    # Build HTML table
+                    html_summary = """
+                    <style>
+                        .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                        .summary-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
+                        .summary-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
+                        .summary-table tr:nth-child(even) { background-color: #1a1f2e; }
+                        .summary-table tr:nth-child(odd) { background-color: #0e1117; }
+                        .summary-table tr:hover { background-color: #2d3748; }
+                    </style>
+                    <div style="max-height: 450px; overflow-y: auto;">
+                    <table class="summary-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Party Name</th>
+                                <th>Trip Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    """
+                    total_trip_count = 0
+                    for idx, (_, row) in enumerate(party_summary.iterrows(), 1):
+                        trip_count = row['Trip Count']
+                        total_trip_count += trip_count
+                        html_summary += f"""
+                            <tr>
+                                <td>{idx}</td>
+                                <td>{row['Party Name']}</td>
+                                <td style="text-align: center; font-weight: bold; color: #22c55e;">{trip_count}</td>
+                            </tr>
+                        """
+                    # Add Grand Total row
+                    html_summary += f"""
+                            <tr style="background-color: #1e40af !important; font-weight: bold;">
+                                <td colspan="2" style="text-align: right; color: white;">Grand Total</td>
+                                <td style="text-align: center; color: #fbbf24; font-size: 15px;">{total_trip_count}</td>
+                            </tr>
+                        """
+                    html_summary += "</tbody></table></div>"
+                    components.html(html_summary, height=500, scrolling=True)
+                else:
+                    st.info("No data available.")
+
+        # Call the fragment
+        daily_loading_fragment()
 
     with tab3:
         st.markdown("### Local/Pilot Loads")
 
-        # Filter for local/pilot trips
-        local_df = month_df[
-            (month_df['Route'].str.contains('LOCAL|PILOT|YARD', case=False, na=False)) |
-            (month_df['Distance'] < 100)
+        # Define KIA Local vehicle numbers
+        kia_vehicles = ['4068 NL01N', '4388 NL01AJ', '4390 NL01AJ', '9454 NL01L', '9456 NL01L',
+                        '5307 NL01N', '0218 NL01AH', '9453 NL01L', '0167 NL01AH']
+
+        # Create filter functions for each category
+        def get_toyota_local(data):
+            return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
+
+        def get_patna_local(data):
+            return data[data['NewPartyName'].str.contains('MAHINDRA LOGISTICS LTD.*Train Load', case=False, na=False, regex=True)]
+
+        def get_haridwar_local(data):
+            return data[data['VehicleNo'].str.contains('8630 NL01AG', case=False, na=False)]
+
+        def get_road_pilot(data):
+            return data[data['DriverName'].str.contains('road pilot', case=False, na=False)]
+
+        def get_kia_local(data):
+            pattern = '|'.join([v.replace(' ', '.*') for v in kia_vehicles])
+            return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+
+        # Get data for each category
+        toyota_local = get_toyota_local(month_df)
+        patna_local = get_patna_local(month_df)
+        haridwar_local = get_haridwar_local(month_df)
+        road_pilot = get_road_pilot(month_df)
+        kia_local = get_kia_local(month_df)
+
+        # Summary data for all categories
+        summary_data = [
+            {'Category': 'Toyota Local', 'Trips': len(toyota_local), 'Cars': int(toyota_local['CarQty'].sum()), 'Freight': toyota_local['Freight'].sum()},
+            {'Category': 'Patna Local', 'Trips': len(patna_local), 'Cars': int(patna_local['CarQty'].sum()), 'Freight': patna_local['Freight'].sum()},
+            {'Category': 'Haridwar Local', 'Trips': len(haridwar_local), 'Cars': int(haridwar_local['CarQty'].sum()), 'Freight': haridwar_local['Freight'].sum()},
+            {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
+            {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
         ]
 
-        if len(local_df) > 0:
-            local_summary = local_df.groupby('DisplayParty').agg({
-                'TLHSNo': 'count',
-                'CarQty': 'sum',
-                'Freight': 'sum'
-            }).reset_index()
-            local_summary.columns = ['Party', 'Trips', 'Cars', 'Freight']
-            local_summary['Freight'] = local_summary['Freight'].apply(lambda x: f"₹{x/100000:.2f}L")
-            local_summary = local_summary[local_summary['Party'] != '']
+        # Summary Section
+        st.markdown("#### Summary")
+        summary_html = """
+        <style>
+            .summary-local { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; }
+            .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }
+            .summary-local td { padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }
+            .summary-local tr:nth-child(even) { background-color: #1a1f2e; }
+            .summary-local tr:nth-child(odd) { background-color: #0e1117; }
+            .summary-local .total-row { background-color: #1e40af !important; font-weight: bold; }
+        </style>
+        <table class="summary-local">
+            <thead>
+                <tr>
+                    <th>Category</th>
+                    <th>Total Trips</th>
+                    <th>Cars Lifted</th>
+                    <th>Freight</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        total_trips = 0
+        total_cars = 0
+        total_freight = 0
+        for item in summary_data:
+            total_trips += item['Trips']
+            total_cars += item['Cars']
+            total_freight += item['Freight']
+            summary_html += f"""
+                <tr>
+                    <td style="text-align: left; font-weight: bold;">{item['Category']}</td>
+                    <td>{item['Trips']}</td>
+                    <td>{item['Cars']}</td>
+                    <td>₹{item['Freight']/100000:.2f}L</td>
+                </tr>
+            """
+        summary_html += f"""
+                <tr class="total-row">
+                    <td style="text-align: left;">Grand Total</td>
+                    <td style="color: #fbbf24;">{total_trips}</td>
+                    <td style="color: #fbbf24;">{total_cars}</td>
+                    <td style="color: #fbbf24;">₹{total_freight/100000:.2f}L</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        components.html(summary_html, height=280)
 
-            st.dataframe(local_summary, use_container_width=True, height=400)
+        # Filter dropdown
+        st.markdown("#### Details by Category")
+        category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local']
+        selected_category = st.selectbox("Select Category", category_options, key='local_category')
+
+        # Get filtered data based on selection
+        if selected_category == 'Toyota Local':
+            filtered_df = toyota_local
+        elif selected_category == 'Patna Local':
+            filtered_df = patna_local
+        elif selected_category == 'Haridwar Local':
+            filtered_df = haridwar_local
+        elif selected_category == 'Road Pilot':
+            filtered_df = road_pilot
         else:
-            st.info("No local/pilot loads found for the selected period.")
+            filtered_df = kia_local
+
+        if len(filtered_df) > 0:
+            # Build details table
+            details_html = """
+            <style>
+                .details-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                .details-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
+                .details-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
+                .details-table tr:nth-child(even) { background-color: #1a1f2e; }
+                .details-table tr:nth-child(odd) { background-color: #0e1117; }
+                .details-table tr:hover { background-color: #2d3748; }
+                .details-table .total-row { background-color: #1e40af !important; font-weight: bold; }
+            </style>
+            <div style="max-height: 400px; overflow-y: auto;">
+            <table class="details-table">
+                <thead>
+                    <tr>
+                        <th>S.No.</th>
+                        <th>Vehicle No</th>
+                        <th>Date</th>
+                        <th>Route</th>
+                        <th>Freight</th>
+                        <th>Qty</th>
+                    </tr>
+                </thead>
+                <tbody>
+            """
+            total_freight_detail = 0
+            total_qty_detail = 0
+            for idx, (_, row) in enumerate(filtered_df.iterrows(), 1):
+                date_str = row['LoadingDate'].strftime('%d/%m/%Y') if pd.notna(row['LoadingDate']) else ''
+                freight = row['Freight'] if pd.notna(row['Freight']) else 0
+                qty = int(row['CarQty']) if pd.notna(row['CarQty']) else 0
+                total_freight_detail += freight
+                total_qty_detail += qty
+                details_html += f"""
+                    <tr>
+                        <td>{idx}</td>
+                        <td>{row['VehicleNo']}</td>
+                        <td>{date_str}</td>
+                        <td>{row['Route']}</td>
+                        <td style="text-align: right;">₹{freight:,.0f}</td>
+                        <td style="text-align: center;">{qty}</td>
+                    </tr>
+                """
+            details_html += f"""
+                    <tr class="total-row">
+                        <td colspan="4" style="text-align: right; color: white;">Grand Total</td>
+                        <td style="text-align: right; color: #fbbf24;">₹{total_freight_detail:,.0f}</td>
+                        <td style="text-align: center; color: #fbbf24;">{total_qty_detail}</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+            """
+            components.html(details_html, height=450, scrolling=True)
+        else:
+            st.info(f"No data found for {selected_category}.")
 
     # Download section
     st.markdown("---")
