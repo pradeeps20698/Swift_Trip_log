@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import json
 from datetime import datetime, timedelta
@@ -201,12 +202,16 @@ def main():
     month_start = selected_month.replace(day=1)
     month_end = (month_start + relativedelta(months=1)) - timedelta(days=1)
 
-    month_df = df[(df['LoadingDate'] >= month_start) & (df['LoadingDate'] <= month_end)]
+    # Convert to date only for accurate comparison
+    df['LoadingDateOnly'] = df['LoadingDate'].dt.date
+
+    # Full month data for summary boxes (all available data for the month)
+    month_df = df[(df['LoadingDateOnly'] >= month_start.date()) & (df['LoadingDateOnly'] <= month_end.date())]
 
     if selected_party != 'All':
         month_df = month_df[month_df['DisplayParty'] == selected_party]
 
-    # Month Summary Section
+    # Month Summary Section (Full Month - Live Data)
     st.markdown(f"### Month Summary ({selected_month.strftime('%B %Y')})")
 
     # Calculate metrics
@@ -267,24 +272,26 @@ def main():
         with col1:
             select_month_start = st.date_input("Select Month", month_start.date())
         with col2:
-            till_date = st.date_input("Till Date", min(datetime.now().date(), month_end.date()))
+            # Default to D-1 (yesterday)
+            yesterday = (datetime.now() - timedelta(days=1)).date()
+            till_date = st.date_input("Till Date", min(yesterday, month_end.date()))
         with col3:
             compare_month = st.date_input("Compare With Month", (month_start - relativedelta(months=2)).date())
         with col4:
             compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
 
-        # Filter data for current period
+        # Filter data for current period (using date only for accurate comparison)
         current_df = df[
-            (df['LoadingDate'] >= pd.to_datetime(select_month_start)) &
-            (df['LoadingDate'] <= pd.to_datetime(till_date)) &
+            (df['LoadingDateOnly'] >= select_month_start) &
+            (df['LoadingDateOnly'] <= till_date) &
             (df['DisplayParty'] != '') &
             (df['DisplayParty'].notna())
         ]
 
         # Filter data for comparison period
         compare_df = df[
-            (df['LoadingDate'] >= pd.to_datetime(compare_month)) &
-            (df['LoadingDate'] <= pd.to_datetime(compare_till_date)) &
+            (df['LoadingDateOnly'] >= compare_month) &
+            (df['LoadingDateOnly'] <= compare_till_date) &
             (df['DisplayParty'] != '') &
             (df['DisplayParty'].notna())
         ]
@@ -336,14 +343,19 @@ def main():
         }
 
         final_rows = []
-        grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0}
+        grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0, 'Target_SQR': 0}
 
         for category in category_order:
             cat_df = summary[summary['category'] == category].copy()
             if len(cat_df) > 0:
+                # Calculate category target sum from individual rows
+                category_target_sum = 0
+
                 # Add individual rows
                 for _, row in cat_df.iterrows():
-                    target_sqr = targets.get(row['Party'], '')
+                    target_sqr = targets.get(row['Party'], 0)
+                    if target_sqr:
+                        category_target_sum += target_sqr
                     final_rows.append({
                         'Client - Wise': row['Party'],
                         'Target SQR': target_sqr if target_sqr else '',
@@ -359,12 +371,14 @@ def main():
                         'category': category
                     })
 
+                # Add to grand total target (for all categories)
+                grand_total['Target_SQR'] += category_target_sum
+
                 # Add category total (skip for Market Load and Other)
                 if category not in ['Market Load', 'Other']:
-                    total_target = targets.get(f"{category} - Total", sum(targets.get(p, 0) for p in cat_df['Party']))
                     final_rows.append({
                         'Client - Wise': f"{category} - Total",
-                        'Target SQR': int(total_target) if total_target else int(cat_df['Trips'].sum()),
+                        'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
                         'Own': int(cat_df['Own_Cars'].sum()),
                         'Vendor': int(cat_df['Vendor_Cars'].sum()),
                         'Total': int(cat_df['Total_Cars'].sum()),
@@ -390,7 +404,7 @@ def main():
         # Add Grand Total row
         final_rows.append({
             'Client - Wise': 'Grand Total',
-            'Target SQR': '',
+            'Target SQR': int(grand_total['Target_SQR']) if grand_total['Target_SQR'] > 0 else '',
             'Own': grand_total['Own'],
             'Vendor': grand_total['Vendor'],
             'Total': grand_total['Total'],
@@ -403,10 +417,11 @@ def main():
             'category': 'Grand'
         })
 
-        # Create display dataframe
+        # Create display dataframe with row numbers
         display_data = []
-        for row in final_rows:
+        for idx, row in enumerate(final_rows, 1):
             display_data.append({
+                '': idx,
                 'Client - Wise': row['Client - Wise'],
                 'Target SQR': row['Target SQR'],
                 'Own': row['Own'],
@@ -421,23 +436,166 @@ def main():
 
         display_df = pd.DataFrame(display_data)
 
-        # Style function
-        def highlight_totals(row):
-            if 'Total' in str(row['Client - Wise']):
-                for fr in final_rows:
-                    if fr['Client - Wise'] == row['Client - Wise']:
-                        color = category_colors.get(fr['category'], '#6b7280')
-                        return [f'background-color: {color}; color: white; font-weight: bold'] * len(row)
-            return [''] * len(row)
+        # Build HTML table with proper formatting
+        compare_date = compare_till_date.strftime("%dth %b'%y")
 
-        # Display styled dataframe
-        styled_df = display_df.style.apply(highlight_totals, axis=1)
-        st.dataframe(styled_df, use_container_width=True, height=500)
+        html_table = f"""
+        <style>
+            body {{
+                background-color: #0e1117;
+                color: #ffffff;
+            }}
+            .custom-table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 13px;
+                background-color: #0e1117;
+                color: #ffffff;
+            }}
+            .custom-table th {{
+                padding: 8px 12px;
+                text-align: center;
+                font-weight: bold;
+                color: #ffffff;
+                border: 1px solid #2d3748;
+                border-bottom: 2px solid #4a5568;
+            }}
+            .custom-table td {{
+                padding: 8px 10px;
+                border: 1px solid #2d3748;
+                color: #ffffff;
+            }}
+            .custom-table tr {{
+                border-bottom: 1px solid #4a5568;
+            }}
+            .custom-table tbody tr:hover {{
+                background-color: #1a202c;
+            }}
+            .summary-row {{
+                background-color: #1a365d !important;
+            }}
+            .col-divider {{
+                border-left: 2px solid #3b82f6 !important;
+            }}
+            .col-divider-right {{
+                border-right: 2px solid #3b82f6 !important;
+            }}
+            .header-group {{
+                background-color: #1e3a5f;
+                color: #ffffff;
+            }}
+            .header-sub {{
+                background-color: #16213e;
+                color: #ffffff;
+                font-size: 12px;
+            }}
+            .total-row {{
+                background-color: #d4a017 !important;
+                color: #000000 !important;
+                font-weight: bold;
+            }}
+            .total-row td {{
+                color: #000000 !important;
+            }}
+            .grand-total-row {{
+                background-color: #1e40af !important;
+                color: #ffffff !important;
+                font-weight: bold;
+            }}
+            .grand-total-row td {{
+                color: #ffffff !important;
+            }}
+            .data-row {{
+                color: #ffffff;
+            }}
+            .data-row:hover {{
+                background-color: #2d2d44;
+            }}
+            .text-left {{ text-align: left; }}
+            .text-right {{ text-align: right; }}
+            .text-center {{ text-align: center; }}
+        </style>
+        <div style="overflow-x: auto;">
+        <table class="custom-table">
+            <thead>
+                <tr>
+                    <th class="header-group text-left col-divider-right" style="width: 25%;">Client - Wise</th>
+                    <th class="header-group text-center col-divider-right" style="width: 8%;">Target SOB</th>
+                    <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">No. of Cars</th>
+                    <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">Freight (₹ Lakhs)</th>
+                    <th class="header-group text-center" colspan="2" style="background-color: #0e4a6f;">Comparison (Till {compare_date})</th>
+                </tr>
+                <tr class="header-sub">
+                    <th class="col-divider-right"></th>
+                    <th class="col-divider-right"></th>
+                    <th>Own</th>
+                    <th>Vendor</th>
+                    <th class="col-divider-right">Total</th>
+                    <th>Own</th>
+                    <th>Vendor</th>
+                    <th class="col-divider-right">Total</th>
+                    <th>Cars</th>
+                    <th>Freight</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
 
-        # Column headers
-        st.markdown("""
-        **Columns:** No. of Cars (Own | Vendor | Total) | Freight ₹ Lakhs (Own | Vendor | Total) | Comparison (Cars | Freight)
-        """)
+        for row in final_rows:
+            is_total = row['is_total']
+            is_grand = row['category'] == 'Grand'
+
+            if is_grand:
+                row_class = 'grand-total-row'
+            elif is_total:
+                row_class = 'total-row'
+            else:
+                row_class = 'data-row'
+
+            html_table += f"""
+                <tr class="{row_class}">
+                    <td class="text-left col-divider-right">{row['Client - Wise']}</td>
+                    <td class="text-center col-divider-right">{row['Target SQR']}</td>
+                    <td class="text-center">{row['Own']}</td>
+                    <td class="text-center">{row['Vendor']}</td>
+                    <td class="text-center col-divider-right">{row['Total']}</td>
+                    <td class="text-right">₹{row['Own_F']/100000:.2f}</td>
+                    <td class="text-right">₹{row['Vendor_F']/100000:.2f}</td>
+                    <td class="text-right col-divider-right">₹{row['Total_F']/100000:.2f}</td>
+                    <td class="text-center">{row['Cars_Comp']}</td>
+                    <td class="text-right">₹{row['Freight_Comp']/100000:.2f}</td>
+                </tr>
+            """
+
+        # Calculate Avg Per Day and Shortfall
+        days_in_period = (till_date - select_month_start).days + 1
+        avg_per_day = grand_total['Total_F'] / days_in_period / 100000 if days_in_period > 0 else 0
+
+        # Shortfall calculation (current period freight - comparison period freight)
+        shortfall = (grand_total['Total_F'] - grand_total['Freight_Comp']) / 100000
+
+        # Color based on positive/negative
+        avg_color = "#22c55e" if avg_per_day >= 0 else "#ef4444"  # Green if positive, Red if negative
+        shortfall_color = "#22c55e" if shortfall >= 0 else "#ef4444"  # Green if positive, Red if negative
+
+        # Add Avg Per Day row
+        html_table += f"""
+                <tr class="summary-row">
+                    <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Avg Per Day >></td>
+                    <td colspan="3" class="text-center" style="color: {avg_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{avg_per_day:.2f} L</td>
+                </tr>
+                <tr class="summary-row">
+                    <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Shortfall from Till {compare_date} >></td>
+                    <td colspan="3" class="text-center" style="color: {shortfall_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{shortfall:.2f} L</td>
+                </tr>
+            </tbody>
+        </table>
+        </div>
+        """
+
+        # Calculate dynamic height based on number of rows + summary rows
+        table_height = 100 + (len(final_rows) * 35) + 100
+        components.html(html_table, height=table_height, scrolling=False)
 
     with tab2:
         st.markdown("### Daily Loading Details")
