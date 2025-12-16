@@ -2,8 +2,14 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 import json
+import psycopg2
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv('/Users/swiftroadlink/Documents/Dashboard/Swift trip log/.env')
 
 # Page configuration
 st.set_page_config(
@@ -68,16 +74,81 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=600)  # Cache for 10 minutes
-def load_triplog_data():
-    """Load trip log data from JSON file"""
+def get_db_connection():
+    """Create database connection"""
     try:
-        with open('/Users/swiftroadlink/Documents/DE/triplog_api_data.json', 'r') as f:
-            data = json.load(f)
-        df = pd.DataFrame(data)
+        conn = psycopg2.connect(
+            host=os.getenv(Host),
+            database=os.getenv(database_name),
+            user=os.getenv(UserName),
+            password=os.getenv(Password),
+            port=os.getenv(Port)
+        )
+        return conn
+    except Exception as e:
+        st.error(f"Database connection error: {e}")
+        return None
+
+@st.cache_data(ttl=300)  # Cache for 5 minutes for fresher data
+def load_triplog_data():
+    """Load trip log data directly from PostgreSQL database"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return pd.DataFrame()
+
+        query = "SELECT * FROM swift_trip_log"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Rename columns to match dashboard expected format
+        column_mapping = {
+            'loading_date': 'LoadingDate',
+            'freight': 'Freight',
+            'car_qty': 'CarQty',
+            'vehicle_no': 'VehicleNo',
+            'driver_name': 'DriverName',
+            'route': 'Route',
+            'trip_status': 'TripStatus',
+            'new_party_name': 'NewPartyName',
+            'party': 'Party',
+            'office': 'Office',
+            'lr_date': 'LRDate',
+            'lr_nos': 'LRNos',
+            'lr_freight': 'LRFreight',
+            'material': 'Material',
+            'distance': 'Distance',
+            'settlement_date': 'SettlementDate',
+            'settlement_no': 'SettlementNo',
+            'unloading_date': 'UnloadingDate',
+            'expected_date': 'ExpectedDate',
+            'reporting_date': 'ReportingDate',
+            'created_date': 'CreatedDate',
+            'created_at': 'CreatedAt',
+            'created_by': 'CreatedBy',
+            'id': 'ID',
+            'tlhs_no': 'TLHSNo',
+            'driver_code': 'DriverCode',
+            'second_driver_name': 'SecondDriverName',
+            'second_driver_code': 'SecondDriverCode',
+            'driver_phone_no': 'DriverPhoneNo',
+            'guarantor': 'Guarantor',
+            'onward_route': 'OnwardRoute',
+            'tl_cash_advance': 'TLCashAdvance',
+            'tl_diesel_advance': 'TLDieselAdvance',
+            'e_toll': 'EToll',
+            'fuel_qty': 'FuelQty',
+            'fuel_qty_budget': 'FuelQtyBudget',
+            'onward_trip_fuel_budget_qty': 'OnwardTripFuelBudgetQty',
+            'carry_forward_fuel_qty': 'CarryForwardFuelQty',
+            'required_fuel_qty': 'RequiredFuelQty',
+            'trip_exp_budget': 'TripExpBudget',
+            'report_unloading_date': 'ReportUnloadingDate'
+        }
+        df = df.rename(columns=column_mapping)
         return df
     except Exception as e:
-        st.error(f"Error loading triplog data: {e}")
+        st.error(f"Error loading triplog data from database: {e}")
         return pd.DataFrame()
 
 
