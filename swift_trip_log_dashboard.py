@@ -13,6 +13,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Auto-refresh every 10 minutes (600000 milliseconds)
+components.html(
+    """
+    <script>
+        setTimeout(function(){
+            window.parent.location.reload();
+        }, 600000);
+    </script>
+    """,
+    height=0
+)
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -56,7 +68,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)  # Cache for 10 minutes
 def load_triplog_data():
     """Load trip log data from JSON file"""
     try:
@@ -168,11 +180,11 @@ def main():
         st.cache_data.clear()
         st.rerun()
 
-    # Target SQR Update Section
+    # Target SOB Update Section
     st.sidebar.markdown("---")
-    st.sidebar.subheader("📊 Update Target SQR")
+    st.sidebar.subheader("Update Target SOB")
 
-    with st.sidebar.expander("Set Target SQR", expanded=False):
+    with st.sidebar.expander("Set Target SOB", expanded=False):
         # Get unique parties for target setting
         unique_parties = sorted(df['DisplayParty'].dropna().unique().tolist())
         unique_parties = [p for p in unique_parties if p != '']
@@ -182,7 +194,7 @@ def main():
 
         if target_party:
             current_target = targets.get(target_party, 0)
-            new_target = st.number_input("Target SQR", min_value=0, value=int(current_target), key='new_target')
+            new_target = st.number_input("Target SOB", min_value=0, value=int(current_target), key='new_target')
 
             if st.button("💾 Save Target"):
                 targets[target_party] = new_target
@@ -261,7 +273,7 @@ def main():
         st.session_state.selected_tab = 0
 
     # Tabs with key to maintain state
-    tab1, tab2, tab3 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View"])
 
     with tab1:
         month_display = selected_month.strftime("%b'%y")
@@ -768,166 +780,473 @@ def main():
     with tab3:
         st.markdown("### Local/Pilot Loads")
 
-        # Define KIA Local vehicle numbers
-        kia_vehicles = ['4068 NL01N', '4388 NL01AJ', '4390 NL01AJ', '9454 NL01L', '9456 NL01L',
-                        '5307 NL01N', '0218 NL01AH', '9453 NL01L', '0167 NL01AH']
+        # Use fragment to prevent tab switching on filter change
+        @st.fragment
+        def local_pilot_fragment():
+            # Define KIA Local vehicle numbers
+            kia_vehicles = ['4068 NL01N', '4388 NL01AJ', '4390 NL01AJ', '9454 NL01L', '9456 NL01L',
+                            '5307 NL01N', '0218 NL01AH', '9453 NL01L', '0167 NL01AH']
 
-        # Create filter functions for each category
-        def get_toyota_local(data):
-            return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
+            # Create filter functions for each category
+            def get_toyota_local(data):
+                return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
 
-        def get_patna_local(data):
-            return data[data['NewPartyName'].str.contains('MAHINDRA LOGISTICS LTD.*Train Load', case=False, na=False, regex=True)]
+            def get_patna_local(data):
+                return data[data['NewPartyName'].str.contains('MAHINDRA LOGISTICS LTD.*Train Load', case=False, na=False, regex=True)]
 
-        def get_haridwar_local(data):
-            return data[data['VehicleNo'].str.contains('8630 NL01AG', case=False, na=False)]
+            def get_haridwar_local(data):
+                return data[data['VehicleNo'].str.contains('8630 NL01AG', case=False, na=False)]
 
-        def get_road_pilot(data):
-            return data[data['DriverName'].str.contains('road pilot', case=False, na=False)]
+            def get_road_pilot(data):
+                return data[data['DriverName'].str.contains('road pilot', case=False, na=False)]
 
-        def get_kia_local(data):
-            pattern = '|'.join([v.replace(' ', '.*') for v in kia_vehicles])
-            return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+            def get_kia_local(data):
+                pattern = '|'.join([v.replace(' ', '.*') for v in kia_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
-        # Get data for each category
-        toyota_local = get_toyota_local(month_df)
-        patna_local = get_patna_local(month_df)
-        haridwar_local = get_haridwar_local(month_df)
-        road_pilot = get_road_pilot(month_df)
-        kia_local = get_kia_local(month_df)
+            # Filter month_df to only include loaded trips
+            loaded_month_df = month_df[
+                (month_df['DisplayParty'] != '') &
+                (month_df['DisplayParty'].notna()) &
+                (month_df['CarQty'] > 0)
+            ]
 
-        # Summary data for all categories
-        summary_data = [
-            {'Category': 'Toyota Local', 'Trips': len(toyota_local), 'Cars': int(toyota_local['CarQty'].sum()), 'Freight': toyota_local['Freight'].sum()},
-            {'Category': 'Patna Local', 'Trips': len(patna_local), 'Cars': int(patna_local['CarQty'].sum()), 'Freight': patna_local['Freight'].sum()},
-            {'Category': 'Haridwar Local', 'Trips': len(haridwar_local), 'Cars': int(haridwar_local['CarQty'].sum()), 'Freight': haridwar_local['Freight'].sum()},
-            {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
-            {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
-        ]
+            # Get data for each category (using loaded trips only)
+            toyota_local = get_toyota_local(loaded_month_df)
+            patna_local = get_patna_local(loaded_month_df)
+            haridwar_local = get_haridwar_local(loaded_month_df)
+            road_pilot = get_road_pilot(loaded_month_df)
+            kia_local = get_kia_local(loaded_month_df)
 
-        # Summary Section
-        st.markdown("#### Summary")
-        summary_html = """
-        <style>
-            .summary-local { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; }
-            .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }
-            .summary-local td { padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }
-            .summary-local tr:nth-child(even) { background-color: #1a1f2e; }
-            .summary-local tr:nth-child(odd) { background-color: #0e1117; }
-            .summary-local .total-row { background-color: #1e40af !important; font-weight: bold; }
-        </style>
-        <table class="summary-local">
-            <thead>
-                <tr>
-                    <th>Category</th>
-                    <th>Total Trips</th>
-                    <th>Cars Lifted</th>
-                    <th>Freight</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
-        total_trips = 0
-        total_cars = 0
-        total_freight = 0
-        for item in summary_data:
-            total_trips += item['Trips']
-            total_cars += item['Cars']
-            total_freight += item['Freight']
-            summary_html += f"""
-                <tr>
-                    <td style="text-align: left; font-weight: bold;">{item['Category']}</td>
-                    <td>{item['Trips']}</td>
-                    <td>{item['Cars']}</td>
-                    <td>₹{item['Freight']/100000:.2f}L</td>
-                </tr>
-            """
-        summary_html += f"""
-                <tr class="total-row">
-                    <td style="text-align: left;">Grand Total</td>
-                    <td style="color: #fbbf24;">{total_trips}</td>
-                    <td style="color: #fbbf24;">{total_cars}</td>
-                    <td style="color: #fbbf24;">₹{total_freight/100000:.2f}L</td>
-                </tr>
-            </tbody>
-        </table>
-        """
-        components.html(summary_html, height=280)
+            # Summary data for all categories
+            summary_data = [
+                {'Category': 'Toyota Local', 'Trips': len(toyota_local), 'Cars': int(toyota_local['CarQty'].sum()), 'Freight': toyota_local['Freight'].sum()},
+                {'Category': 'Patna Local', 'Trips': len(patna_local), 'Cars': int(patna_local['CarQty'].sum()), 'Freight': patna_local['Freight'].sum()},
+                {'Category': 'Haridwar Local', 'Trips': len(haridwar_local), 'Cars': int(haridwar_local['CarQty'].sum()), 'Freight': haridwar_local['Freight'].sum()},
+                {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
+                {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
+            ]
 
-        # Filter dropdown
-        st.markdown("#### Details by Category")
-        category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local']
-        selected_category = st.selectbox("Select Category", category_options, key='local_category')
-
-        # Get filtered data based on selection
-        if selected_category == 'Toyota Local':
-            filtered_df = toyota_local
-        elif selected_category == 'Patna Local':
-            filtered_df = patna_local
-        elif selected_category == 'Haridwar Local':
-            filtered_df = haridwar_local
-        elif selected_category == 'Road Pilot':
-            filtered_df = road_pilot
-        else:
-            filtered_df = kia_local
-
-        if len(filtered_df) > 0:
-            # Build details table
-            details_html = """
+            # Summary Section
+            st.markdown("#### Summary")
+            summary_html = """
             <style>
-                .details-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                .details-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
-                .details-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
-                .details-table tr:nth-child(even) { background-color: #1a1f2e; }
-                .details-table tr:nth-child(odd) { background-color: #0e1117; }
-                .details-table tr:hover { background-color: #2d3748; }
-                .details-table .total-row { background-color: #1e40af !important; font-weight: bold; }
+                .summary-local { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; border: 2px solid #3b82f6; }
+                .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }
+                .summary-local td { padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }
+                .summary-local tr:nth-child(even) { background-color: #1a1f2e; }
+                .summary-local tr:nth-child(odd) { background-color: #0e1117; }
+                .summary-local .total-row { background-color: #1e40af !important; font-weight: bold; }
+                .summary-local .total-row td { border: 1px solid #3b82f6; border-bottom: 2px solid #3b82f6; }
             </style>
-            <div style="max-height: 400px; overflow-y: auto;">
-            <table class="details-table">
+            <table class="summary-local">
                 <thead>
                     <tr>
-                        <th>S.No.</th>
-                        <th>Vehicle No</th>
-                        <th>Date</th>
-                        <th>Route</th>
+                        <th>Category</th>
+                        <th>Total Trips</th>
+                        <th>Cars Lifted</th>
                         <th>Freight</th>
-                        <th>Qty</th>
                     </tr>
                 </thead>
                 <tbody>
             """
-            total_freight_detail = 0
-            total_qty_detail = 0
-            for idx, (_, row) in enumerate(filtered_df.iterrows(), 1):
-                date_str = row['LoadingDate'].strftime('%d/%m/%Y') if pd.notna(row['LoadingDate']) else ''
-                freight = row['Freight'] if pd.notna(row['Freight']) else 0
-                qty = int(row['CarQty']) if pd.notna(row['CarQty']) else 0
-                total_freight_detail += freight
-                total_qty_detail += qty
-                details_html += f"""
+            total_trips = 0
+            total_cars = 0
+            total_freight = 0
+            for item in summary_data:
+                total_trips += item['Trips']
+                total_cars += item['Cars']
+                total_freight += item['Freight']
+                summary_html += f"""
                     <tr>
-                        <td>{idx}</td>
-                        <td>{row['VehicleNo']}</td>
-                        <td>{date_str}</td>
-                        <td>{row['Route']}</td>
-                        <td style="text-align: right;">₹{freight:,.0f}</td>
-                        <td style="text-align: center;">{qty}</td>
+                        <td style="text-align: left; font-weight: bold;">{item['Category']}</td>
+                        <td>{item['Trips']}</td>
+                        <td>{item['Cars']}</td>
+                        <td>₹{item['Freight']/100000:.2f}L</td>
                     </tr>
                 """
-            details_html += f"""
+            summary_html += f"""
                     <tr class="total-row">
-                        <td colspan="4" style="text-align: right; color: white;">Grand Total</td>
-                        <td style="text-align: right; color: #fbbf24;">₹{total_freight_detail:,.0f}</td>
-                        <td style="text-align: center; color: #fbbf24;">{total_qty_detail}</td>
+                        <td style="text-align: left;">Grand Total</td>
+                        <td style="color: #fbbf24;">{total_trips}</td>
+                        <td style="color: #fbbf24;">{total_cars}</td>
+                        <td style="color: #fbbf24;">₹{total_freight/100000:.2f}L</td>
                     </tr>
                 </tbody>
             </table>
-            </div>
             """
-            components.html(details_html, height=450, scrolling=True)
-        else:
-            st.info(f"No data found for {selected_category}.")
+            components.html(summary_html, height=320)
+
+            # Filter dropdown
+            st.markdown("#### Details by Category")
+            col_filter, col_empty = st.columns([1, 3])
+            with col_filter:
+                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local']
+                selected_category = st.selectbox("Select Category", category_options, key='local_category')
+
+            # Get filtered data based on selection
+            if selected_category == 'Toyota Local':
+                filtered_df = toyota_local
+            elif selected_category == 'Patna Local':
+                filtered_df = patna_local
+            elif selected_category == 'Haridwar Local':
+                filtered_df = haridwar_local
+            elif selected_category == 'Road Pilot':
+                filtered_df = road_pilot
+            else:
+                filtered_df = kia_local
+
+            if len(filtered_df) > 0:
+                # Build details table
+                details_html = """
+                <style>
+                    .details-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                    .details-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
+                    .details-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
+                    .details-table tr:nth-child(even) { background-color: #1a1f2e; }
+                    .details-table tr:nth-child(odd) { background-color: #0e1117; }
+                    .details-table tr:hover { background-color: #2d3748; }
+                    .details-table .total-row { background-color: #1e40af !important; font-weight: bold; }
+                </style>
+                <div style="max-height: 400px; overflow-y: auto;">
+                <table class="details-table">
+                    <thead>
+                        <tr>
+                            <th>S.No.</th>
+                            <th>Vehicle No</th>
+                            <th>Date</th>
+                            <th>Route</th>
+                            <th>Freight</th>
+                            <th>Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+                total_freight_detail = 0
+                total_qty_detail = 0
+                for idx, (_, row) in enumerate(filtered_df.iterrows(), 1):
+                    date_str = row['LoadingDate'].strftime('%d/%m/%Y') if pd.notna(row['LoadingDate']) else ''
+                    freight = row['Freight'] if pd.notna(row['Freight']) else 0
+                    qty = int(row['CarQty']) if pd.notna(row['CarQty']) else 0
+                    total_freight_detail += freight
+                    total_qty_detail += qty
+                    details_html += f"""
+                        <tr>
+                            <td>{idx}</td>
+                            <td>{row['VehicleNo']}</td>
+                            <td>{date_str}</td>
+                            <td>{row['Route']}</td>
+                            <td style="text-align: right;">₹{freight:,.0f}</td>
+                            <td style="text-align: center;">{qty}</td>
+                        </tr>
+                    """
+                details_html += f"""
+                        <tr class="total-row">
+                            <td colspan="4" style="text-align: right; color: white;">Grand Total</td>
+                            <td style="text-align: right; color: #fbbf24;">₹{total_freight_detail:,.0f}</td>
+                            <td style="text-align: center; color: #fbbf24;">{total_qty_detail}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                """
+                components.html(details_html, height=450, scrolling=True)
+            else:
+                st.info(f"No data found for {selected_category}.")
+
+        # Call the fragment
+        local_pilot_fragment()
+
+    with tab4:
+        st.markdown("### Zone View")
+
+        # Zone mapping function
+        def get_zone(city):
+            if pd.isna(city) or city == '':
+                return 'Unknown'
+            city_upper = str(city).upper().strip()
+
+            # North Zone - Delhi NCR, Punjab, Haryana, Himachal, J&K, Uttarakhand
+            north_cities = ['DELHI', 'NOIDA', 'GURGAON', 'GURUGRAM', 'FARIDABAD', 'GHAZIABAD', 'GREATER NOIDA',
+                           'CHANDIGARH', 'MOHALI', 'PANCHKULA', 'LUDHIANA', 'JALANDHAR', 'JALLANDHAR', 'AMRITSAR', 'PATIALA',
+                           'BATHINDA', 'BHATINDA', 'FIROZPUR', 'FEROZEPUR', 'HOSHIARPUR', 'MUKTSAR', 'SANGRUR',
+                           'SONIPAT', 'PANIPAT', 'KARNAL', 'KURUKSHETRA', 'AMBALA', 'HISAR', 'HISSAR', 'ROHTAK',
+                           'BHIWANI', 'SIRSA', 'JIND', 'KAITHAL', 'REWARI', 'NARNAUL', 'BAHADURGARH', 'DHARUHERA',
+                           'MANESAR', 'KUNDLI', 'PALWAL', 'NUH', 'FARRUKHNAGAR', 'FARUKHNAGAR', 'PIRTHLA',
+                           'SHIMLA', 'MANDI', 'KANGRA', 'KULLU', 'SOLAN', 'UNA', 'HAMIRPUR', 'PAONTA SAHIB',
+                           'JAMMU', 'SRINAGAR', 'KATHUA', 'PATHANKOT',
+                           'DEHRADUN', 'HARIDWAR', 'ROORKEE', 'HALDWANI', 'RUDRAPUR', 'KASHIPUR',
+                           'TAPUKERA', 'ICAT MANESAR', 'KHARKHODA', 'BILASPUR (HR)', 'YAMUNANAGAR']
+
+            # East Zone - West Bengal, Bihar, Jharkhand, Odisha, Assam, NE States
+            east_cities = ['KOLKATA', 'HOWRAH', 'SILIGURI', 'ASANSOL', 'DURGAPUR', 'KHARAGPUR', 'MALDA',
+                          'BARDHAMAN', 'BARDDHAMAN', 'BEHRAMPORE', 'BERHAMPORE', 'COOCHBEHAR', 'ALIPURDUAR',
+                          'PATNA', 'MUZAFFARPUR', 'GAYA', 'BHAGALPUR', 'DARBHANGA', 'BEGUSARAI', 'CHAPRA',
+                          'MOTIHARI', 'PURNIA', 'SAMASTIPUR', 'BIHAR SHARIF', 'SAHARSA', 'SIWAN', 'GOPALGANJ',
+                          'GOPALGUNJ', 'ARRAH', 'AURANGABAD (BIHAR)', 'VAISHALI', 'KISHANGANJ', 'JAMALPUR',
+                          'RANCHI', 'JAMSHEDPUR', 'DHANBAD', 'BOKARO', 'HAZARIBAGH', 'HAZARIBAG', 'DEOGHAR',
+                          'DALTONGANJ', 'BARHI(JH)',
+                          'BHUBANESHWAR', 'CUTTACK', 'ROURKELA', 'SAMBALPUR', 'BERHAMPUR', 'BRAHMAPUR',
+                          'BALASORE', 'PURI', 'ANGUL', 'PANIKOILI', 'KEONJHAR', 'JEYPORE', 'JAYPORE',
+                          'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON', 'NORTH LAKHIMPUR',
+                          'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN', 'WEST CHAMPARAN']
+
+            # West Zone - Maharashtra, Gujarat, Rajasthan, Goa
+            west_cities = ['MUMBAI', 'PUNE', 'NASHIK', 'NAGPUR', 'AURANGABAD', 'AURNGABAD(MH)', 'AURANGABAD(MAHARASHTRA)',
+                          'SOLAPUR', 'KOLHAPUR', 'SANGLI', 'SATARA', 'AHMEDNAGAR', 'THANE', 'NAVI MUMBAI',
+                          'BHIWANDI', 'PANVEL', 'PANWEL', 'VASAI', 'KALYAN', 'RATNAGIRI', 'LATUR', 'BEED',
+                          'JALGAON', 'DHULE', 'AKOLA', 'AMRAVATI', 'CHANDRAPUR', 'CHANDERPUR', 'MALEGAON',
+                          'BARAMATI', 'SANGAMNER', 'RANJANGAON', 'UDGIR', 'NANDED',
+                          'AHMEDABAD', 'SURAT', 'VADODARA', 'RAJKOT', 'BHAVNAGAR', 'JAMNAGAR', 'JUNAGADH',
+                          'GANDHIDHAM', 'BHUJ', 'ANAND', 'MEHSANA', 'MORBI', 'VAPI', 'NAVSARI', 'BHARUCH',
+                          'ANKLESHWAR', 'GODHRA', 'DAHOD', 'HIMATNAGAR', 'HIMMATNAGAR', 'SURENDRANAGAR',
+                          'PALANPUR', 'SANAND', 'BECHRAJI', 'HALOL', 'BARDOLI', 'CHHARODI', 'AMBLI', 'GANDHINAGAR',
+                          'DHOLERA', 'PIPAVAV PORT', 'KHEDA(GJ)',
+                          'JAIPUR', 'JODHPUR', 'UDAIPUR', 'KOTA', 'AJMER', 'BIKANER', 'ALWAR', 'BHILWARA',
+                          'SIKAR', 'SRIGANGANAGAR', 'BHARATPUR', 'DAUSA', 'JHUNJHUNU', 'CHITTORGARH', 'TONK',
+                          'BANSWARA', 'NAGAUR', 'SAWAI MADHOPUR', 'JHALAWAR', 'NEEMUCH',
+                          'GOA', 'NUVEM']
+
+            # South Zone - Karnataka, Tamil Nadu, Kerala, Andhra Pradesh, Telangana
+            south_cities = ['BANGALORE', 'MYSORE', 'HUBLI', 'BELGAUM', 'BELGAON', 'MANGALORE', 'MANGLORE',
+                           'DAVANGERE', 'BELLARY', 'TUMKUR', 'SHIMOGA', 'SIMOGA', 'HASSAN', 'UDUPI',
+                           'CHITRADURGA', 'HOSPET', 'GULBARGA', 'KALABURGI', 'BIJAPUR', 'RAICHUR',
+                           'CHIKMAGALUR', 'CHIKKAMAGALURU', 'CHIKKABALLAPUR', 'RAMANAGARA', 'BIDADI',
+                           'HOSUR', 'KADUR', 'SINDHANUR', 'YELLAPUR(KA)', 'TOYOTA BANGLORE', 'HAROHALLI',
+                           'CHENNAI', 'COIMBATORE', 'MADURAI', 'TRICHY', 'SALEM', 'TIRUPUR', 'ERODE',
+                           'VELLORE', 'TIRUNELVELI', 'NAGERCOIL', 'THANJAVUR', 'CUDDALORE', 'KANCHIPURAM',
+                           'PONDICHERRY', 'PUDUCHERRY', 'KARAIKUDI', 'SRI CITY', 'CHENNAI PORT', 'CHENNAI TI',
+                           'VILUPPURAM', 'VERA VILPUR', 'HYUNDAI',
+                           'KOCHI', 'COCHIN', 'KOCHIN', 'THIRUVANANTHAPURAM', 'TRIVANDRUM', 'KOZHIKODE',
+                           'CALICUT', 'THRISSUR', 'KOLLAM', 'ALAPPUZHA', 'ALLEPPHY', 'PALAKKAD', 'PALLAKAD',
+                           'KANNUR', 'KASARGOD', 'KOTTAYAM', 'PATHANAMTHITTA', 'KAYAMKULAM', 'MALAPPURAM',
+                           'ERNAKULAM', 'MUVATTUPUZHA',
+                           'HYDERABAD', 'SECUNDERABAD', 'VIJAYAWADA', 'VISAKHAPATNAM', 'VISHAKHAPATNAM',
+                           'TIRUPATI', 'GUNTUR', 'NELLORE', 'KURNOOL', 'KADAPA', 'ANANTAPUR', 'ONGOLE',
+                           'RAJAHMUNDRY', 'KAKINADA', 'BHIMAVARAM', 'SRIKAKULAM', 'ANAKAPALLI', 'KIA',
+                           'WARANGAL', 'KARIMNAGAR', 'NIZAMABAD', 'KHAMMAM', 'NALGONDA', 'MAHBUBNAGAR',
+                           'NIRMAL', 'ZAHEERABAD', 'ADONI']
+
+            # Central Zone - Madhya Pradesh, Chhattisgarh, UP (Central/East)
+            central_cities = ['BHOPAL', 'INDORE', 'JABALPUR', 'GWALIOR', 'UJJAIN', 'RATLAM', 'DEWAS', 'SAGAR',
+                             'SATNA', 'REWA', 'KATNI', 'CHHINDWARA', 'CHINDWARA', 'KHANDWA', 'KHARGONE',
+                             'HOSHANGABAD', 'SEHORE', 'VIDISHA', 'SHAHDOL', 'SEONI', 'LAKHNADON', 'SHIVPURI',
+                             'GUNA', 'BIAORA', 'SHUJALPUR', 'SUJALPUR', 'CHHATARPUR', 'MAHOBA', 'WAIDHAN',
+                             'JHABUA', 'JABHUA', 'NEEMUCH',
+                             'RAIPUR', 'BILASPUR', 'BHILAI', 'KORBA', 'RAJNANDGAON', 'DURG', 'JAGDALPUR',
+                             'AMBIKAPUR', 'KANKER',
+                             'LUCKNOW', 'KANPUR', 'AGRA', 'VARANASI', 'ALLAHABAD', 'PRAYAGRAJ', 'GORAKHPUR',
+                             'BAREILLY', 'ALIGARH', 'MORADABAD', 'MEERUT', 'SAHARANPUR', 'MATHURA', 'FIROZABAD',
+                             'ETAWAH', 'ETAH', 'MAINPURI', 'SHAHJAHANPUR', 'SAHANJANPUR', 'SITAPUR', 'HARDOI',
+                             'UNNAO', 'RAE BAREILLY', 'RAEBARELI', 'RAI BARELI', 'SULTANPUR', 'FAIZABAD',
+                             'AZAMGARH', 'JAUNPUR', 'MIRZAPUR', 'ROBERTSGANJ', 'BASTI', 'GONDA', 'DEORIA',
+                             'BULANDSHAHAR', 'BIJNOR', 'MUZAFFARNAGAR', 'MUZAFFAR NAGAR', 'NAJIBABAD',
+                             'LAKHIMPUR', 'LAKHIMPUR KHERI', 'ORAI', 'JHANSI', 'FARRUKHABAD', 'PRATAPGARH',
+                             'ABOHAR', 'KUNDA', 'KHURJA']
+
+            # Check each zone
+            for city_check in north_cities:
+                if city_check in city_upper or city_upper in city_check:
+                    return 'North'
+
+            for city_check in east_cities:
+                if city_check in city_upper or city_upper in city_check:
+                    return 'East'
+
+            for city_check in west_cities:
+                if city_check in city_upper or city_upper in city_check:
+                    return 'West'
+
+            for city_check in south_cities:
+                if city_check in city_upper or city_upper in city_check:
+                    return 'South'
+
+            for city_check in central_cities:
+                if city_check in city_upper or city_upper in city_check:
+                    return 'Central'
+
+            return 'Other'
+
+        # Filter loaded trips only
+        loaded_df = month_df[
+            (month_df['DisplayParty'] != '') &
+            (month_df['DisplayParty'].notna()) &
+            (month_df['CarQty'] > 0)
+        ].copy()
+
+        # Extract Origin and Destination from Route
+        loaded_df['Origin'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
+        loaded_df['Destination'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
+
+        # Map to zones
+        loaded_df['Origin_Zone'] = loaded_df['Origin'].apply(get_zone)
+        loaded_df['Dest_Zone'] = loaded_df['Destination'].apply(get_zone)
+
+        # Create pivot tables
+        zones = ['Central', 'East', 'North', 'South', 'West']
+
+        # Build the zone matrix for Cars Lifted
+        cars_matrix = {}
+        for origin_zone in zones:
+            cars_matrix[origin_zone] = {}
+            for dest_zone in zones:
+                count = loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
+                cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+        # Build the zone matrix for Trips Count
+        trips_matrix = {}
+        for origin_zone in zones:
+            trips_matrix[origin_zone] = {}
+            for dest_zone in zones:
+                count = len(loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)])
+                trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+        # Function to get text color based on value (green for high, red for low)
+        def get_text_color(val, max_val):
+            if val == 0 or max_val == 0:
+                return 'color: white;'
+            ratio = val / max_val
+            if ratio >= 0.7:
+                return 'color: #22c55e; font-weight: bold;'  # Bright green
+            elif ratio >= 0.4:
+                return 'color: #84cc16; font-weight: bold;'  # Light green
+            elif ratio >= 0.2:
+                return 'color: #eab308; font-weight: bold;'  # Yellow
+            else:
+                return 'color: #ef4444; font-weight: bold;'  # Red
+
+        # Get max values for color scaling
+        cars_values = [v for row in cars_matrix.values() for v in row.values() if v > 0]
+        trips_values = [v for row in trips_matrix.values() for v in row.values() if v > 0]
+        max_cars = max(cars_values) if cars_values else 1
+        max_trips = max(trips_values) if trips_values else 1
+
+        # Function to build zone table HTML
+        def build_zone_table(matrix, title, max_val):
+            html = f"""
+            <h4 style="color: white; margin-bottom: 10px;">{title}</h4>
+            <style>
+                .zone-table {{ width: 100%; border-collapse: collapse; font-size: 14px; border: 2px solid #3b82f6; }}
+                .zone-table th {{ background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }}
+                .zone-table td {{ padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }}
+                .zone-table tr:nth-child(even) {{ background-color: #1a1f2e; }}
+                .zone-table tr:nth-child(odd) {{ background-color: #0e1117; }}
+                .zone-table .total-row {{ background-color: #1e40af !important; font-weight: bold; }}
+                .zone-table .total-row td {{ border: 1px solid #3b82f6; }}
+                .zone-table .row-header {{ text-align: left; font-weight: bold; font-style: italic; }}
+                .zone-table .grand-total {{ color: #fbbf24; font-weight: bold; }}
+            </style>
+            <table class="zone-table">
+                <thead>
+                    <tr>
+                        <th style="font-style: italic;">Origin Zone</th>
+            """
+            for dest_zone in zones:
+                html += f'<th>{dest_zone}</th>'
+            html += '<th>Grand Total</th></tr></thead><tbody>'
+
+            grand_total = 0
+            col_totals = {z: 0 for z in zones}
+
+            for origin_zone in zones:
+                row_total = 0
+                html += f'<tr><td class="row-header">{origin_zone}</td>'
+                for dest_zone in zones:
+                    val = matrix[origin_zone][dest_zone]
+                    if val > 0:
+                        row_total += val
+                        col_totals[dest_zone] += val
+                        text_style = get_text_color(val, max_val)
+                        html += f'<td style="{text_style}">{val}</td>'
+                    else:
+                        html += '<td></td>'
+                grand_total += row_total
+                html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
+
+            html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
+            for dest_zone in zones:
+                html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
+            html += f'<td class="grand-total">{grand_total}</td></tr>'
+
+            html += '</tbody></table>'
+            return html
+
+        # Display both tables side by side
+        col_table1, col_table2 = st.columns(2)
+
+        with col_table1:
+            st.markdown("#### No. of Cars Lifted")
+            cars_html = build_zone_table(cars_matrix, "", max_cars)
+            components.html(cars_html, height=280)
+
+        with col_table2:
+            st.markdown("#### No. of Loaded Trips")
+            trips_html = build_zone_table(trips_matrix, "", max_trips)
+            components.html(trips_html, height=280)
+
+        # Chart: Zone by Car Lifted (excluding DC Movement)
+        st.markdown("---")
+        st.markdown("#### Zone by Car Lifted")
+        st.caption("*Note: DC Movement not included*")
+
+        import plotly.graph_objects as go
+
+        # Filter out DC Movement for this chart
+        chart_df = loaded_df[~loaded_df['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
+
+        # Recalculate zone matrix excluding DC Movement
+        chart_cars_matrix = {}
+        for origin_zone in zones:
+            chart_cars_matrix[origin_zone] = {}
+            for dest_zone in zones:
+                count = chart_df[(chart_df['Origin_Zone'] == origin_zone) & (chart_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
+                chart_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+        # Get top routes for chart
+        route_data = []
+        for oz in zones:
+            for dz in zones:
+                if chart_cars_matrix[oz][dz] > 0:
+                    route_data.append({
+                        'Route': f'{oz} → {dz}',
+                        'Cars': chart_cars_matrix[oz][dz]
+                    })
+
+        if route_data:
+            route_df = pd.DataFrame(route_data).sort_values('Cars', ascending=True).tail(10)
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                y=route_df['Route'],
+                x=route_df['Cars'],
+                orientation='h',
+                marker_color=['#22c55e' if c >= route_df['Cars'].quantile(0.7) else '#3b82f6' if c >= route_df['Cars'].quantile(0.4) else '#eab308' for c in route_df['Cars']],
+                text=route_df['Cars'],
+                textposition='outside'
+            ))
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                paper_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+                height=400,
+                xaxis_title='Cars Lifted',
+                yaxis_title='',
+                margin=dict(l=100, r=50, t=20, b=50)
+            )
+            fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
+            fig.update_yaxes(showgrid=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Show unmapped cities if any
+        other_origins = loaded_df[loaded_df['Origin_Zone'] == 'Other']['Origin'].unique()
+        other_dests = loaded_df[loaded_df['Dest_Zone'] == 'Other']['Destination'].unique()
+
+        if len(other_origins) > 0 or len(other_dests) > 0:
+            with st.expander("Unmapped Cities (Other Zone)"):
+                if len(other_origins) > 0:
+                    st.write("**Origins:**", ', '.join(sorted(set(other_origins))))
+                if len(other_dests) > 0:
+                    st.write("**Destinations:**", ', '.join(sorted(set(other_dests))))
 
     # Download section
     st.markdown("---")
