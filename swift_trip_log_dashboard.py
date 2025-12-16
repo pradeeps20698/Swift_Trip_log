@@ -966,7 +966,7 @@ def main():
                 return 'Unknown'
             city_upper = str(city).upper().strip()
 
-            # North Zone - Delhi NCR, Punjab, Haryana, Himachal, J&K, Uttarakhand
+            # North Zone - Delhi NCR, Punjab, Haryana, Himachal, J&K, Uttarakhand, Rajasthan
             north_cities = ['DELHI', 'NOIDA', 'GURGAON', 'GURUGRAM', 'FARIDABAD', 'GHAZIABAD', 'GREATER NOIDA',
                            'CHANDIGARH', 'MOHALI', 'PANCHKULA', 'LUDHIANA', 'JALANDHAR', 'JALLANDHAR', 'AMRITSAR', 'PATIALA',
                            'BATHINDA', 'BHATINDA', 'FIROZPUR', 'FEROZEPUR', 'HOSHIARPUR', 'MUKTSAR', 'SANGRUR',
@@ -976,7 +976,10 @@ def main():
                            'SHIMLA', 'MANDI', 'KANGRA', 'KULLU', 'SOLAN', 'UNA', 'HAMIRPUR', 'PAONTA SAHIB',
                            'JAMMU', 'SRINAGAR', 'KATHUA', 'PATHANKOT',
                            'DEHRADUN', 'HARIDWAR', 'ROORKEE', 'HALDWANI', 'RUDRAPUR', 'KASHIPUR',
-                           'TAPUKERA', 'ICAT MANESAR', 'KHARKHODA', 'BILASPUR (HR)', 'YAMUNANAGAR']
+                           'TAPUKERA', 'ICAT MANESAR', 'KHARKHODA', 'BILASPUR (HR)', 'YAMUNANAGAR',
+                           'JAIPUR', 'JODHPUR', 'UDAIPUR', 'KOTA', 'AJMER', 'BIKANER', 'ALWAR', 'BHILWARA',
+                           'SIKAR', 'SRIGANGANAGAR', 'BHARATPUR', 'DAUSA', 'JHUNJHUNU', 'CHITTORGARH', 'TONK',
+                           'BANSWARA', 'NAGAUR', 'SAWAI MADHOPUR', 'JHALAWAR', 'NEEMUCH']
 
             # East Zone - West Bengal, Bihar, Jharkhand, Odisha, Assam, NE States
             east_cities = ['KOLKATA', 'HOWRAH', 'SILIGURI', 'ASANSOL', 'DURGAPUR', 'KHARAGPUR', 'MALDA',
@@ -991,7 +994,7 @@ def main():
                           'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON', 'NORTH LAKHIMPUR',
                           'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN', 'WEST CHAMPARAN']
 
-            # West Zone - Maharashtra, Gujarat, Rajasthan, Goa
+            # West Zone - Maharashtra, Gujarat, Goa
             west_cities = ['MUMBAI', 'PUNE', 'NASHIK', 'NAGPUR', 'AURANGABAD', 'AURNGABAD(MH)', 'AURANGABAD(MAHARASHTRA)',
                           'SOLAPUR', 'KOLHAPUR', 'SANGLI', 'SATARA', 'AHMEDNAGAR', 'THANE', 'NAVI MUMBAI',
                           'BHIWANDI', 'PANVEL', 'PANWEL', 'VASAI', 'KALYAN', 'RATNAGIRI', 'LATUR', 'BEED',
@@ -1002,9 +1005,6 @@ def main():
                           'ANKLESHWAR', 'GODHRA', 'DAHOD', 'HIMATNAGAR', 'HIMMATNAGAR', 'SURENDRANAGAR',
                           'PALANPUR', 'SANAND', 'BECHRAJI', 'HALOL', 'BARDOLI', 'CHHARODI', 'AMBLI', 'GANDHINAGAR',
                           'DHOLERA', 'PIPAVAV PORT', 'KHEDA(GJ)',
-                          'JAIPUR', 'JODHPUR', 'UDAIPUR', 'KOTA', 'AJMER', 'BIKANER', 'ALWAR', 'BHILWARA',
-                          'SIKAR', 'SRIGANGANAGAR', 'BHARATPUR', 'DAUSA', 'JHUNJHUNU', 'CHITTORGARH', 'TONK',
-                          'BANSWARA', 'NAGAUR', 'SAWAI MADHOPUR', 'JHALAWAR', 'NEEMUCH',
                           'GOA', 'NUVEM']
 
             # South Zone - Karnataka, Tamil Nadu, Kerala, Andhra Pradesh, Telangana
