@@ -78,11 +78,11 @@ def get_db_connection():
     """Create database connection"""
     try:
         conn = psycopg2.connect(
-            host=os.getenv(Host),
-            database=os.getenv(database_name),
-            user=os.getenv(UserName),
-            password=os.getenv(Password),
-            port=os.getenv(Port)
+            host=os.getenv('Host'),
+            database=os.getenv('database_name'),
+            user=os.getenv('UserName'),
+            password=os.getenv('Password'),
+            port=os.getenv('Port')
         )
         return conn
     except Exception as e:
@@ -1038,32 +1038,34 @@ def main():
             city_upper = str(city).upper().strip()
 
             # North Zone - Delhi NCR, Punjab, Haryana, Himachal, J&K, Uttarakhand, Rajasthan
-            north_cities = ['DELHI', 'NOIDA', 'GURGAON', 'GURUGRAM', 'FARIDABAD', 'GHAZIABAD', 'GREATER NOIDA',
+            north_cities = ['DELHI', 'NOIDA', 'GURGAON', 'GURUGRAM', 'FARIDABAD', 'GHAZIABAD', 'GHAIZABAD', 'GREATER NOIDA',
                            'CHANDIGARH', 'MOHALI', 'PANCHKULA', 'LUDHIANA', 'JALANDHAR', 'JALLANDHAR', 'AMRITSAR', 'PATIALA',
                            'BATHINDA', 'BHATINDA', 'FIROZPUR', 'FEROZEPUR', 'HOSHIARPUR', 'MUKTSAR', 'SANGRUR',
                            'SONIPAT', 'PANIPAT', 'KARNAL', 'KURUKSHETRA', 'AMBALA', 'HISAR', 'HISSAR', 'ROHTAK',
-                           'BHIWANI', 'SIRSA', 'JIND', 'KAITHAL', 'REWARI', 'NARNAUL', 'BAHADURGARH', 'DHARUHERA',
-                           'MANESAR', 'KUNDLI', 'PALWAL', 'NUH', 'FARRUKHNAGAR', 'FARUKHNAGAR', 'PIRTHLA',
+                           'BHIWANI', 'SIRSA', 'JIND', 'KAITHAL', 'REWARI', 'NARNAUL', 'BAHADURGARH', 'DHARUHERA', 'DHARUHEDA',
+                           'MANESAR', 'KUNDLI', 'PALWAL', 'NUH', 'FARRUKHNAGAR', 'FARUKHNAGAR', 'PIRTHLA', 'SOHNA',
                            'SHIMLA', 'MANDI', 'KANGRA', 'KULLU', 'SOLAN', 'UNA', 'HAMIRPUR', 'PAONTA SAHIB',
-                           'JAMMU', 'SRINAGAR', 'KATHUA', 'PATHANKOT',
+                           'JAMMU', 'SRINAGAR', 'KATHUA', 'PATHANKOT', 'ROPAR', 'RUPNAGAR', 'KAPURTHALA', 'KALANWALI',
                            'DEHRADUN', 'HARIDWAR', 'ROORKEE', 'HALDWANI', 'RUDRAPUR', 'KASHIPUR',
-                           'TAPUKERA', 'ICAT MANESAR', 'KHARKHODA', 'BILASPUR (HR)', 'YAMUNANAGAR',
-                           'JAIPUR', 'JODHPUR', 'UDAIPUR', 'KOTA', 'AJMER', 'BIKANER', 'ALWAR', 'BHILWARA',
-                           'SIKAR', 'SRIGANGANAGAR', 'BHARATPUR', 'DAUSA', 'JHUNJHUNU', 'CHITTORGARH', 'TONK',
+                           'TAPUKERA', 'ICAT MANESAR', 'KHARKHODA', 'BILASPUR (HR)', 'YAMUNANAGAR', 'BHIWADI', 'WAZIRPUR',
+                           'JAIPUR', 'JODHPUR', 'UDAIPUR', 'KOTA', 'AJMER', 'BIKANER', 'ALWAR', 'BHILWARA', 'KANKROLI',
+                           'SIKAR', 'SRIGANGANAGAR', 'SRI GANGANAGAR', 'BHARATPUR', 'DAUSA', 'JHUNJHUNU', 'CHITTORGARH', 'TONK',
                            'BANSWARA', 'NAGAUR', 'SAWAI MADHOPUR', 'JHALAWAR', 'NEEMUCH']
 
             # East Zone - West Bengal, Bihar, Jharkhand, Odisha, Assam, NE States
             east_cities = ['KOLKATA', 'HOWRAH', 'SILIGURI', 'ASANSOL', 'DURGAPUR', 'KHARAGPUR', 'MALDA',
-                          'BARDHAMAN', 'BARDDHAMAN', 'BEHRAMPORE', 'BERHAMPORE', 'COOCHBEHAR', 'ALIPURDUAR',
+                          'BARDHAMAN', 'BARDDHAMAN', 'BARDHMAN', 'BEHRAMPORE', 'BERHAMPORE', 'BEHRAMPUR', 'COOCHBEHAR', 'ALIPURDUAR',
+                          'BUNIYADPUR', 'MOGRA', 'UPARNAGAR',
                           'PATNA', 'MUZAFFARPUR', 'GAYA', 'BHAGALPUR', 'DARBHANGA', 'BEGUSARAI', 'CHAPRA',
-                          'MOTIHARI', 'PURNIA', 'SAMASTIPUR', 'BIHAR SHARIF', 'SAHARSA', 'SIWAN', 'GOPALGANJ',
-                          'GOPALGUNJ', 'ARRAH', 'AURANGABAD (BIHAR)', 'VAISHALI', 'KISHANGANJ', 'JAMALPUR',
-                          'RANCHI', 'JAMSHEDPUR', 'DHANBAD', 'BOKARO', 'HAZARIBAGH', 'HAZARIBAG', 'DEOGHAR',
-                          'DALTONGANJ', 'BARHI(JH)',
+                          'MOTIHARI', 'PURNIA', 'SAMASTIPUR', 'BIHAR SHARIF', 'SAHARSA', 'SHARSHA', 'SIWAN', 'GOPALGANJ',
+                          'GOPALGUNJ', 'ARRAH', 'ARAH', 'AURANGABAD (BIHAR)', 'VAISHALI', 'KISHANGANJ', 'JAMALPUR',
+                          'ANISABAD', 'ANISHABAD', 'SHERGHATI',
+                          'RANCHI', 'JAMSHEDPUR', 'DHANBAD', 'BOKARO', 'HAZARIBAGH', 'HAZARIBAG', 'DEOGHAR', 'DEOGARH',
+                          'DALTONGANJ', 'BARHI(JH)', 'GIRIDIH',
                           'BHUBANESHWAR', 'CUTTACK', 'ROURKELA', 'SAMBALPUR', 'BERHAMPUR', 'BRAHMAPUR',
                           'BALASORE', 'PURI', 'ANGUL', 'PANIKOILI', 'KEONJHAR', 'JEYPORE', 'JAYPORE',
-                          'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON', 'NORTH LAKHIMPUR',
-                          'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN', 'WEST CHAMPARAN']
+                          'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON', 'NORTH LAKHIMPUR', 'SILCHAR',
+                          'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN', 'WEST CHAMPARAN', 'AGARTALA', 'IMPHAL', 'PORT BLAIR']
 
             # West Zone - Maharashtra, Gujarat, Goa
             west_cities = ['MUMBAI', 'PUNE', 'NASHIK', 'NAGPUR', 'AURANGABAD', 'AURNGABAD(MH)', 'AURANGABAD(MAHARASHTRA)',
@@ -1084,16 +1086,16 @@ def main():
                            'CHITRADURGA', 'HOSPET', 'GULBARGA', 'KALABURGI', 'BIJAPUR', 'RAICHUR',
                            'CHIKMAGALUR', 'CHIKKAMAGALURU', 'CHIKKABALLAPUR', 'RAMANAGARA', 'BIDADI',
                            'HOSUR', 'KADUR', 'SINDHANUR', 'YELLAPUR(KA)', 'TOYOTA BANGLORE', 'HAROHALLI',
-                           'CHENNAI', 'COIMBATORE', 'MADURAI', 'TRICHY', 'SALEM', 'TIRUPUR', 'ERODE',
+                           'CHENNAI', 'COIMBATORE', 'MADURAI', 'TRICHY', 'TIRUCHIRAPPALLI', 'SALEM', 'TIRUPUR', 'ERODE',
                            'VELLORE', 'TIRUNELVELI', 'NAGERCOIL', 'THANJAVUR', 'CUDDALORE', 'KANCHIPURAM',
                            'PONDICHERRY', 'PUDUCHERRY', 'KARAIKUDI', 'SRI CITY', 'CHENNAI PORT', 'CHENNAI TI',
-                           'VILUPPURAM', 'VERA VILPUR', 'HYUNDAI',
+                           'VILUPPURAM', 'VERA VILPUR', 'HYUNDAI', 'RAMAPURAM',
                            'KOCHI', 'COCHIN', 'KOCHIN', 'THIRUVANANTHAPURAM', 'TRIVANDRUM', 'KOZHIKODE',
-                           'CALICUT', 'THRISSUR', 'KOLLAM', 'ALAPPUZHA', 'ALLEPPHY', 'PALAKKAD', 'PALLAKAD',
-                           'KANNUR', 'KASARGOD', 'KOTTAYAM', 'PATHANAMTHITTA', 'KAYAMKULAM', 'MALAPPURAM',
+                           'CALICUT', 'THRISSUR', 'TRISSUR', 'KOLLAM', 'ALAPPUZHA', 'ALLEPPHY', 'PALAKKAD', 'PALLAKAD',
+                           'KANNUR', 'KASARGOD', 'KOTTAYAM', 'KOTTYAM', 'PATHANAMTHITTA', 'KAYAMKULAM', 'MALAPPURAM', 'MALLAPURAM',
                            'ERNAKULAM', 'MUVATTUPUZHA',
                            'HYDERABAD', 'SECUNDERABAD', 'VIJAYAWADA', 'VISAKHAPATNAM', 'VISHAKHAPATNAM',
-                           'TIRUPATI', 'GUNTUR', 'NELLORE', 'KURNOOL', 'KADAPA', 'ANANTAPUR', 'ONGOLE',
+                           'TIRUPATI', 'GUNTUR', 'NELLORE', 'KURNOOL', 'KADAPA', 'ANANTAPUR', 'ANANTHPUR', 'ONGOLE',
                            'RAJAHMUNDRY', 'KAKINADA', 'BHIMAVARAM', 'SRIKAKULAM', 'ANAKAPALLI', 'KIA',
                            'WARANGAL', 'KARIMNAGAR', 'NIZAMABAD', 'KHAMMAM', 'NALGONDA', 'MAHBUBNAGAR',
                            'NIRMAL', 'ZAHEERABAD', 'ADONI']
@@ -1103,7 +1105,7 @@ def main():
                              'SATNA', 'REWA', 'KATNI', 'CHHINDWARA', 'CHINDWARA', 'KHANDWA', 'KHARGONE',
                              'HOSHANGABAD', 'SEHORE', 'VIDISHA', 'SHAHDOL', 'SEONI', 'LAKHNADON', 'SHIVPURI',
                              'GUNA', 'BIAORA', 'SHUJALPUR', 'SUJALPUR', 'CHHATARPUR', 'MAHOBA', 'WAIDHAN',
-                             'JHABUA', 'JABHUA', 'NEEMUCH',
+                             'JHABUA', 'JABHUA', 'NEEMUCH', 'MAKSI', 'MAKSI(MP)',
                              'RAIPUR', 'BILASPUR', 'BHILAI', 'KORBA', 'RAJNANDGAON', 'DURG', 'JAGDALPUR',
                              'AMBIKAPUR', 'KANKER',
                              'LUCKNOW', 'KANPUR', 'AGRA', 'VARANASI', 'ALLAHABAD', 'PRAYAGRAJ', 'GORAKHPUR',
@@ -1113,7 +1115,7 @@ def main():
                              'AZAMGARH', 'JAUNPUR', 'MIRZAPUR', 'ROBERTSGANJ', 'BASTI', 'GONDA', 'DEORIA',
                              'BULANDSHAHAR', 'BIJNOR', 'MUZAFFARNAGAR', 'MUZAFFAR NAGAR', 'NAJIBABAD',
                              'LAKHIMPUR', 'LAKHIMPUR KHERI', 'ORAI', 'JHANSI', 'FARRUKHABAD', 'PRATAPGARH',
-                             'ABOHAR', 'KUNDA', 'KHURJA']
+                             'ABOHAR', 'KUNDA', 'KHURJA', 'KARHAL', 'KARHAL(UP)', 'KOTVA SARAK']
 
             # Check each zone
             for city_check in north_cities:
@@ -1138,11 +1140,11 @@ def main():
 
             return 'Other'
 
-        # Filter loaded trips only
+        # Filter loaded trips only (same as summary box logic)
         loaded_df = month_df[
+            (month_df['TripStatus'] != 'Empty') &
             (month_df['DisplayParty'] != '') &
-            (month_df['DisplayParty'].notna()) &
-            (month_df['CarQty'] > 0)
+            (month_df['DisplayParty'].notna())
         ].copy()
 
         # Extract Origin and Destination from Route
@@ -1153,7 +1155,7 @@ def main():
         loaded_df['Origin_Zone'] = loaded_df['Origin'].apply(get_zone)
         loaded_df['Dest_Zone'] = loaded_df['Destination'].apply(get_zone)
 
-        # Create pivot tables
+        # Create pivot tables (including Other for unmapped cities)
         zones = ['Central', 'East', 'North', 'South', 'West']
 
         # Build the zone matrix for Cars Lifted
@@ -1192,8 +1194,12 @@ def main():
         max_cars = max(cars_values) if cars_values else 1
         max_trips = max(trips_values) if trips_values else 1
 
+        # Calculate actual totals from loaded_df (to match summary box)
+        actual_total_trips = len(loaded_df)
+        actual_total_cars = int(loaded_df['CarQty'].sum())
+
         # Function to build zone table HTML
-        def build_zone_table(matrix, title, max_val):
+        def build_zone_table(matrix, title, max_val, actual_grand_total):
             html = f"""
             <h4 style="color: white; margin-bottom: 10px;">{title}</h4>
             <style>
@@ -1216,7 +1222,6 @@ def main():
                 html += f'<th>{dest_zone}</th>'
             html += '<th>Grand Total</th></tr></thead><tbody>'
 
-            grand_total = 0
             col_totals = {z: 0 for z in zones}
 
             for origin_zone in zones:
@@ -1231,13 +1236,12 @@ def main():
                         html += f'<td style="{text_style}">{val}</td>'
                     else:
                         html += '<td></td>'
-                grand_total += row_total
                 html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
 
             html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
             for dest_zone in zones:
                 html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
-            html += f'<td class="grand-total">{grand_total}</td></tr>'
+            html += f'<td class="grand-total">{actual_grand_total}</td></tr>'
 
             html += '</tbody></table>'
             return html
@@ -1247,12 +1251,12 @@ def main():
 
         with col_table1:
             st.markdown("#### No. of Cars Lifted")
-            cars_html = build_zone_table(cars_matrix, "", max_cars)
+            cars_html = build_zone_table(cars_matrix, "", max_cars, actual_total_cars)
             components.html(cars_html, height=280)
 
         with col_table2:
             st.markdown("#### No. of Loaded Trips")
-            trips_html = build_zone_table(trips_matrix, "", max_trips)
+            trips_html = build_zone_table(trips_matrix, "", max_trips, actual_total_trips)
             components.html(trips_html, height=280)
 
         # Chart: Zone by Car Lifted (excluding DC Movement)
