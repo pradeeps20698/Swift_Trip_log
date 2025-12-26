@@ -182,7 +182,7 @@ def get_client_category(party_name):
     party_upper = str(party_name).upper()
     if "HONDA" in party_upper or "TAPUKERA" in party_upper:
         return "Honda"
-    elif "MAHINDRA" in party_upper or "M & M" in party_upper or "M&M" in party_upper or "MSTC" in party_upper or "TRAIN LOAD" in party_upper:
+    elif "MAHINDRA" in party_upper or "M & M" in party_upper or "M&M" in party_upper or "MSTC" in party_upper or "TRAIN LOAD" in party_upper or "NISAN" in party_upper:
         return "M & M"
     elif "TOYOTA" in party_upper or "TRANSYSTEM" in party_upper or "DC MOVEMENT" in party_upper:
         return "Toyota"
