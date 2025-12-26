@@ -175,6 +175,20 @@ def save_targets(targets):
         return False
 
 
+def normalize_party_name(party_name):
+    """Map party name variations to a single standardized name for display"""
+    if pd.isna(party_name) or party_name == "":
+        return party_name
+
+    party_upper = str(party_name).upper().strip()
+
+    # Mahindra mappings
+    if "NISAN" in party_upper or "NISSAN" in party_upper:
+        return "MAHINDRA LOGISTICS LTD"
+
+    return party_name
+
+
 def get_client_category(party_name):
     """Categorize clients into groups based on NewPartyName"""
     if pd.isna(party_name) or party_name == "":
@@ -223,6 +237,9 @@ def main():
         df['DisplayParty'] = df['NewPartyName'].fillna(df['Party'])
     else:
         df['DisplayParty'] = df['Party']
+
+    # Normalize party names (merge variations into single name)
+    df['DisplayParty'] = df['DisplayParty'].apply(normalize_party_name)
 
     # Add client category based on DisplayParty
     df['category'] = df['DisplayParty'].apply(get_client_category)
