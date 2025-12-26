@@ -6,15 +6,11 @@ import psycopg2
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import os
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv('/Users/swiftroadlink/Documents/Dashboard/Swift trip log/.env')
 
 # Page configuration
 st.set_page_config(
     page_title="Swift Trip Log Dashboard",
-    page_icon="🚛",
+    page_icon="🚚",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -78,11 +74,11 @@ def get_db_connection():
     """Create database connection"""
     try:
         conn = psycopg2.connect(
-            host=os.getenv('Host'),
-            database=os.getenv('database_name'),
-            user=os.getenv('UserName'),
-            password=os.getenv('Password'),
-            port=os.getenv('Port')
+            host=st.secrets["Host"],
+            database=st.secrets["database_name"],
+            user=st.secrets["UserName"],
+            password=st.secrets["Password"],
+            port=st.secrets["Port"]
         )
         return conn
     except Exception as e:
@@ -152,10 +148,16 @@ def load_triplog_data():
         return pd.DataFrame()
 
 
+def get_targets_path():
+    """Get the path to sob_targets.json (works locally and on Streamlit Cloud)"""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(script_dir, 'sob_targets.json')
+
+
 def load_targets():
     """Load target SQR data from JSON file"""
     try:
-        with open('/Users/swiftroadlink/Documents/Dashboard/Swift trip log/sob_targets.json', 'r') as f:
+        with open(get_targets_path(), 'r') as f:
             targets = json.load(f)
         return targets
     except:
@@ -163,9 +165,9 @@ def load_targets():
 
 
 def save_targets(targets):
-    """Save target SQR data to JSON file"""
+    """Save target SQR data to JSON file (Note: Won't work on Streamlit Cloud - read-only filesystem)"""
     try:
-        with open('/Users/swiftroadlink/Documents/Dashboard/Swift trip log/sob_targets.json', 'w') as f:
+        with open(get_targets_path(), 'w') as f:
             json.dump(targets, f, indent=2)
         return True
     except Exception as e:
@@ -198,7 +200,7 @@ def get_client_category(party_name):
 
 def main():
     # Header
-    st.markdown("<h1 style='text-align: center;'>🚛 Swift Trip Log Dashboard</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align: center;'>🚚 Swift Trip Log Dashboard</h1>", unsafe_allow_html=True)
 
     # Load data
     with st.spinner("Loading data..."):
