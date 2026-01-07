@@ -987,6 +987,9 @@ def main():
                 filtered_df = kia_local
 
             if len(filtered_df) > 0:
+                # Sort by LoadingDate ascending
+                filtered_df = filtered_df.sort_values('LoadingDate', ascending=True)
+
                 # Build details table
                 details_html = """
                 <style>
@@ -1193,19 +1196,9 @@ def main():
                 count = len(loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)])
                 trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
 
-        # Function to get text color based on value (green for high, red for low)
+        # Function to get text color (uniform white color for all values)
         def get_text_color(val, max_val):
-            if val == 0 or max_val == 0:
-                return 'color: white;'
-            ratio = val / max_val
-            if ratio >= 0.7:
-                return 'color: #22c55e; font-weight: bold;'  # Bright green
-            elif ratio >= 0.4:
-                return 'color: #84cc16; font-weight: bold;'  # Light green
-            elif ratio >= 0.2:
-                return 'color: #eab308; font-weight: bold;'  # Yellow
-            else:
-                return 'color: #ef4444; font-weight: bold;'  # Red
+            return 'color: white;'
 
         # Get max values for color scaling
         cars_values = [v for row in cars_matrix.values() for v in row.values() if v > 0]
