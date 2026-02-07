@@ -148,6 +148,87 @@ def load_triplog_data():
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)  # Cache for 5 minutes
+def load_vendor_data():
+    """Load vendor data from cn_data table (where tl_no is NULL = vendor trips)"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return pd.DataFrame()
+
+        query = """
+            SELECT billing_party, cn_date, qty, basic_freight, route, origin
+            FROM cn_data
+            WHERE (billing_party = 'R.sai Logistics India Pvt. Ltd.' AND tl_no IS NULL)
+               OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle')
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Rename columns
+        df = df.rename(columns={
+            'billing_party': 'BillingParty',
+            'cn_date': 'CNDate',
+            'qty': 'CarQty',
+            'basic_freight': 'Freight',
+            'route': 'Route',
+            'origin': 'Origin'
+        })
+
+        # Convert date
+        df['CNDate'] = pd.to_datetime(df['CNDate'], errors='coerce')
+        df['CNDateOnly'] = df['CNDate'].dt.date
+
+        return df
+    except Exception as e:
+        st.error(f"Error loading vendor data from database: {e}")
+        return pd.DataFrame()
+
+
+def get_vendor_client_mapping(billing_party, origin=None):
+    """Map vendor billing_party to client display name for summary"""
+    if pd.isna(billing_party) or billing_party == "":
+        return None
+
+    # Special handling for Mahindra - split by origin
+    if billing_party == 'MAHINDRA LOGISTICS LTD.':
+        origin_str = str(origin).strip() if origin and not pd.isna(origin) else ''
+        origin_upper = origin_str.upper()
+        if 'CHAKAN' in origin_upper:
+            return 'Mahindra Logistics Ltd - Chakan'
+        elif 'NASHIK' in origin_upper:
+            return 'Mahindra Logistics Ltd - Nashik'
+        elif 'HARIDWAR' in origin_upper:
+            return 'Mahindra Logistics Ltd - Haridwar'
+        else:
+            # Chennai, Pune, Jeypore, etc. go to main MAHINDRA LOGISTICS LTD
+            return 'MAHINDRA LOGISTICS LTD'
+
+    # Direct mappings: billing_party -> DisplayParty name for dashboard
+    # Map to same name to show as separate row, or map to existing client name to merge
+    vendor_mappings = {
+        # R.sai uses tl_no IS NULL logic
+        'R.sai Logistics India Pvt. Ltd.': 'R.sai Logistics India Pvt. Ltd.',
+        # All below use vehicle_type = 'Hire Vehicle' logic
+        'Kwick Living Private Limited': 'Kwick Living Private Limited',
+        'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune': 'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune',
+        'Glovis India Pvt Ltd - KIA': 'Glovis India Pvt Ltd - KIA',
+        'Glovis India Pvt Ltd - Hyundai': 'Glovis India Pvt Ltd - Hyundai',
+        'Honda Cars India Ltd - Tapukera': 'Honda Cars India Ltd - Tapukera',
+        'Honda Cars India Ltd - Noida': 'Honda Noida',
+        'Tata Motors Passenger Vehicles Limited - Pune': 'Tata Motors Pvt Ltd - Pune',
+        'Tata Motors Passenger Vehicles Limited - Sanand': 'Tata Motors Pvt Ltd - Sanand',
+        'Tata Passenger Electric Mobility Limited - Pune': 'Tata Motors Pvt Ltd - Pune',
+        'JSW MG Motor India Private Limited': 'JSW MG Motor India Private Limited',
+        'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) BLR': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
+        'M/S Mohan Logistics Private  Limited': 'M/S Mohan Logistics Private Limited',
+        'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
+    }
+
+    # If billing_party matches a mapping, return it; otherwise map to Market Load
+    return vendor_mappings.get(billing_party, 'Market Load')
+
+
 def get_targets_path():
     """Get the path to sob_targets.json (works locally and on Streamlit Cloud)"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -182,9 +263,26 @@ def normalize_party_name(party_name):
 
     party_upper = str(party_name).upper().strip()
 
-    # Mahindra mappings
-    if "NISAN" in party_upper or "NISSAN" in party_upper:
-        return "MAHINDRA LOGISTICS LTD"
+    # Note: NISAN and BMW mappings are now handled in database trigger
+    # They will show as separate entries: "Mahindra Logistics Ltd - NISAN" and "Mahindra Logistics Ltd - BMW"
+
+    # Market Load mappings
+    market_load_parties = [
+        "ALL INDIA TRPT.",
+        "BALAJI CARGO CARRIER (INDIA)",
+        "DOOR TO DOOR RELATIONS LOGISTICS",
+        "GOLDEN TRANSPORT",
+        "M.Y. TRANSPORT COMPANY PRIVATE LIMITED",
+        "RAMESH CAR CARRIER",
+        "SHRI OM LOGISTICS",
+        "YATI TRANS LOGISTICS LLP"
+    ]
+    if party_upper in [p.upper() for p in market_load_parties]:
+        return "Market Load"
+
+    # VALUEDRIVE mappings
+    if party_upper == "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) UP":
+        return "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)"
 
     return party_name
 
@@ -219,6 +317,7 @@ def main():
     # Load data
     with st.spinner("Loading data..."):
         df = load_triplog_data()
+        vendor_df = load_vendor_data()
         targets = load_targets()
 
     if df.empty:
@@ -316,11 +415,32 @@ def main():
     # Month Summary Section (Full Month - Live Data)
     st.markdown(f"### Month Summary ({selected_month.strftime('%B %Y')})")
 
-    # Calculate metrics
+    # Calculate Own metrics
     loaded_trips = len(month_df[(month_df['TripStatus'] != 'Empty') & (month_df['DisplayParty'] != '') & (month_df['DisplayParty'].notna())])
     empty_trips = len(month_df[(month_df['TripStatus'] == 'Empty') | (month_df['DisplayParty'] == '') | (month_df['DisplayParty'].isna())])
-    cars_lifted = int(month_df['CarQty'].sum())
-    total_freight = month_df['Freight'].sum()
+    own_cars = int(month_df['CarQty'].sum())
+    own_freight = month_df['Freight'].sum()
+
+    # Calculate Vendor metrics for full month
+    vendor_cars = 0
+    vendor_freight = 0.0
+    if not vendor_df.empty:
+        vendor_month_df = vendor_df[
+            (vendor_df['CNDateOnly'] >= month_start.date()) &
+            (vendor_df['CNDateOnly'] <= month_end.date())
+        ].copy()
+        if not vendor_month_df.empty:
+            # Apply vendor mapping to filter only mapped vendors
+            vendor_month_df['MappedParty'] = vendor_month_df.apply(
+                lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+            )
+            vendor_mapped = vendor_month_df[vendor_month_df['MappedParty'].notna()]
+            vendor_cars = int(vendor_mapped['CarQty'].sum())
+            vendor_freight = vendor_mapped['Freight'].sum()
+
+    # Total (Own + Vendor)
+    total_cars = own_cars + vendor_cars
+    total_freight = own_freight + vendor_freight
     total_freight_lakhs = total_freight / 100000
 
     # Display metrics in cards
@@ -346,7 +466,17 @@ def main():
         st.markdown(f"""
         <div class="metric-card-blue">
             <div class="metric-label">Cars Lifted</div>
-            <div class="metric-value">{cars_lifted:,}</div>
+            <div class="metric-value">{total_cars:,}</div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <div style="flex: 1; background: #1e3a5f; padding: 8px; border-radius: 6px; text-align: center;">
+                <div style="color: #9ca3af; font-size: 10px;">Own</div>
+                <div style="color: white; font-size: 14px; font-weight: bold;">{own_cars:,}</div>
+            </div>
+            <div style="flex: 1; background: #4a3728; padding: 8px; border-radius: 6px; text-align: center;">
+                <div style="color: #9ca3af; font-size: 10px;">Vendor</div>
+                <div style="color: #f59e0b; font-size: 14px; font-weight: bold;">{vendor_cars:,}</div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -355,6 +485,16 @@ def main():
         <div class="metric-card-red">
             <div class="metric-label">Total Freight</div>
             <div class="metric-value">₹{total_freight_lakhs:.2f}L</div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <div style="flex: 1; background: #1e3a5f; padding: 8px; border-radius: 6px; text-align: center;">
+                <div style="color: #9ca3af; font-size: 10px;">Own</div>
+                <div style="color: white; font-size: 14px; font-weight: bold;">₹{own_freight/100000:.2f}L</div>
+            </div>
+            <div style="flex: 1; background: #4a3728; padding: 8px; border-radius: 6px; text-align: center;">
+                <div style="color: #9ca3af; font-size: 10px;">Vendor</div>
+                <div style="color: #f59e0b; font-size: 14px; font-weight: bold;">₹{vendor_freight/100000:.2f}L</div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -382,7 +522,7 @@ def main():
             yesterday = (datetime.now() - timedelta(days=1)).date()
             till_date = st.date_input("Till Date", min(yesterday, month_end.date()))
         with col3:
-            compare_month = st.date_input("Compare With Month", (month_start - relativedelta(months=2)).date())
+            compare_month = st.date_input("Compare With Month", datetime(2025, 12, 1).date())
         with col4:
             compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
 
@@ -405,20 +545,63 @@ def main():
         till_date_display = till_date.strftime("%dth %b'%y")
         st.markdown(f"#### Till {till_date_display} 📊")
 
-        # Create client-wise summary
+        # Create client-wise summary (Own data from swift_trip_log)
         summary = current_df.groupby('DisplayParty').agg({
             'TLHSNo': 'count',
             'CarQty': 'sum',
             'Freight': 'sum'
         }).reset_index()
-        summary.columns = ['Party', 'Trips', 'Total_Cars', 'Total_Freight']
+        summary.columns = ['Party', 'Trips', 'Own_Cars', 'Own_Freight']
         summary['category'] = summary['Party'].apply(get_client_category)
 
-        # All are "Own" for now
-        summary['Own_Cars'] = summary['Total_Cars']
+        # Process vendor data from cn_data
         summary['Vendor_Cars'] = 0
-        summary['Own_Freight'] = summary['Total_Freight']
-        summary['Vendor_Freight'] = 0
+        summary['Vendor_Freight'] = 0.0
+
+        if not vendor_df.empty:
+            # Filter vendor data for current period
+            vendor_current = vendor_df[
+                (vendor_df['CNDateOnly'] >= select_month_start) &
+                (vendor_df['CNDateOnly'] <= till_date)
+            ].copy()
+
+            if not vendor_current.empty:
+                # Map vendor billing_party to client display name (with origin for Mahindra)
+                vendor_current['MappedParty'] = vendor_current.apply(
+                    lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                )
+
+                # Filter only mapped vendors and group
+                vendor_mapped = vendor_current[vendor_current['MappedParty'].notna()]
+                if not vendor_mapped.empty:
+                    vendor_summary = vendor_mapped.groupby('MappedParty').agg({
+                        'CarQty': 'sum',
+                        'Freight': 'sum'
+                    }).reset_index()
+                    vendor_summary.columns = ['Party', 'Vendor_Cars', 'Vendor_Freight']
+
+                    # Merge vendor data with summary (outer join to include vendor-only parties)
+                    summary = summary.merge(vendor_summary, on='Party', how='outer', suffixes=('', '_v'))
+
+                    # Fill missing values for vendor-only parties
+                    summary['Trips'] = summary['Trips'].fillna(0)
+                    summary['Own_Cars'] = summary['Own_Cars'].fillna(0)
+                    summary['Own_Freight'] = summary['Own_Freight'].fillna(0)
+
+                    # Merge vendor columns
+                    summary['Vendor_Cars'] = summary['Vendor_Cars_v'].fillna(summary['Vendor_Cars']).fillna(0)
+                    summary['Vendor_Freight'] = summary['Vendor_Freight_v'].fillna(summary['Vendor_Freight']).fillna(0)
+                    summary = summary.drop(columns=['Vendor_Cars_v', 'Vendor_Freight_v'], errors='ignore')
+
+                    # Add category for new vendor-only parties
+                    summary['category'] = summary.apply(
+                        lambda row: get_client_category(row['Party']) if pd.isna(row.get('category')) else row['category'],
+                        axis=1
+                    )
+
+        # Calculate totals
+        summary['Total_Cars'] = summary['Own_Cars'] + summary['Vendor_Cars']
+        summary['Total_Freight'] = summary['Own_Freight'] + summary['Vendor_Freight']
 
         # Add comparison data
         if not compare_df.empty:
