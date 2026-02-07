@@ -186,6 +186,29 @@ def load_vendor_data():
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=3600)  # Cache for 60 minutes - auto refresh when vehicles change
+def load_vehicles_by_type(vehicle_type):
+    """Load vehicle numbers from swift_vehicles by vehicle_type"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return []
+
+        query = f"""
+            SELECT vehicle_no FROM swift_vehicles
+            WHERE vehicle_type = '{vehicle_type}' AND is_active = 'Y'
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        if df.empty:
+            return []
+        return df['vehicle_no'].tolist()
+    except Exception as e:
+        st.error(f"Error loading vehicles by type: {e}")
+        return []
+
+
 def get_vendor_client_mapping(billing_party, origin=None):
     """Map vendor billing_party to client display name for summary"""
     if pd.isna(billing_party) or billing_party == "":
@@ -1243,9 +1266,8 @@ def main():
         # Use fragment to prevent tab switching on filter change
         @st.fragment
         def local_pilot_fragment():
-            # Define KIA Local vehicle numbers
-            kia_vehicles = ['4068 NL01N', '4388 NL01AJ', '4390 NL01AJ', '9454 NL01L', '9456 NL01L',
-                            '5307 NL01N', '0218 NL01AH', '9453 NL01L', '0167 NL01AH']
+            # Load KIA Local vehicle numbers dynamically from swift_vehicles
+            kia_vehicles = load_vehicles_by_type('TR_KIA_LCL')
 
             # Create filter functions for each category
             def get_toyota_local(data):
@@ -1255,13 +1277,28 @@ def main():
                 return data[data['NewPartyName'].str.contains('MAHINDRA LOGISTICS LTD.*Train Load', case=False, na=False, regex=True)]
 
             def get_haridwar_local(data):
-                return data[data['VehicleNo'].str.contains('8630 NL01AG', case=False, na=False)]
+                # Load Haridwar Local vehicles dynamically from swift_vehicles
+                haridwar_vehicles = load_vehicles_by_type('TR_HRD_LCL')
+                if not haridwar_vehicles:
+                    return data.head(0)  # Return empty dataframe
+                pattern = '|'.join([v.replace(' ', '.*') for v in haridwar_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_road_pilot(data):
                 return data[data['DriverName'].str.contains('road pilot', case=False, na=False)]
 
             def get_kia_local(data):
+                if not kia_vehicles:
+                    return data.head(0)
                 pattern = '|'.join([v.replace(' ', '.*') for v in kia_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+
+            def get_gujarat_local(data):
+                # Load Gujarat Local vehicles dynamically from swift_vehicles
+                gujarat_vehicles = load_vehicles_by_type('TR_Gujarat_LCL')
+                if not gujarat_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in gujarat_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             # Filter month_df to only include loaded trips
@@ -1277,6 +1314,7 @@ def main():
             haridwar_local = get_haridwar_local(loaded_month_df)
             road_pilot = get_road_pilot(loaded_month_df)
             kia_local = get_kia_local(loaded_month_df)
+            gujarat_local = get_gujarat_local(loaded_month_df)
 
             # Summary data for all categories
             summary_data = [
@@ -1285,19 +1323,20 @@ def main():
                 {'Category': 'Haridwar Local', 'Trips': len(haridwar_local), 'Cars': int(haridwar_local['CarQty'].sum()), 'Freight': haridwar_local['Freight'].sum()},
                 {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
                 {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
+                {'Category': 'Gujarat Local', 'Trips': len(gujarat_local), 'Cars': int(gujarat_local['CarQty'].sum()), 'Freight': gujarat_local['Freight'].sum()},
             ]
 
             # Summary Section
             st.markdown("#### Summary")
             summary_html = """
             <style>
-                .summary-local { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; border: 2px solid #3b82f6; }
+                .summary-local { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; border: 2px solid #3b82f6; border-radius: 8px; overflow: hidden; }
                 .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }
-                .summary-local td { padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }
+                .summary-local td { padding: 10px; border: 1px solid #3b82f6; color: white; text-align: center; }
                 .summary-local tr:nth-child(even) { background-color: #1a1f2e; }
                 .summary-local tr:nth-child(odd) { background-color: #0e1117; }
                 .summary-local .total-row { background-color: #1e40af !important; font-weight: bold; }
-                .summary-local .total-row td { border: 1px solid #3b82f6; border-bottom: 2px solid #3b82f6; }
+                .summary-local .total-row td { border: 1px solid #3b82f6; }
             </style>
             <table class="summary-local">
                 <thead>
@@ -1335,13 +1374,13 @@ def main():
                 </tbody>
             </table>
             """
-            components.html(summary_html, height=320)
+            components.html(summary_html, height=380)
 
             # Filter dropdown
             st.markdown("#### Details by Category")
             col_filter, col_empty = st.columns([1, 3])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local']
+                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Gujarat Local']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -1353,8 +1392,10 @@ def main():
                 filtered_df = haridwar_local
             elif selected_category == 'Road Pilot':
                 filtered_df = road_pilot
-            else:
+            elif selected_category == 'Kia Local':
                 filtered_df = kia_local
+            else:
+                filtered_df = gujarat_local
 
             if len(filtered_df) > 0:
                 # Sort by LoadingDate ascending
@@ -1640,6 +1681,130 @@ def main():
             st.markdown("#### No. of Loaded Trips")
             trips_html = build_zone_table(trips_matrix, "", max_trips, actual_total_trips)
             components.html(trips_html, height=280)
+
+        # Vendor Zone Tables
+        st.markdown("---")
+        st.markdown("#### Vendor Zone View")
+
+        if not vendor_df.empty:
+            # Filter vendor data for the month
+            vendor_zone_df = vendor_df[
+                (vendor_df['CNDateOnly'] >= month_start.date()) &
+                (vendor_df['CNDateOnly'] <= month_end.date())
+            ].copy()
+
+            if not vendor_zone_df.empty:
+                # Apply vendor mapping
+                vendor_zone_df['MappedParty'] = vendor_zone_df.apply(
+                    lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                )
+                vendor_zone_df = vendor_zone_df[vendor_zone_df['MappedParty'].notna()]
+
+                if not vendor_zone_df.empty:
+                    # Extract Origin and Destination from Route
+                    vendor_zone_df['OriginCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
+                    vendor_zone_df['DestCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
+
+                    # Map to zones
+                    vendor_zone_df['Origin_Zone'] = vendor_zone_df['OriginCity'].apply(get_zone)
+                    vendor_zone_df['Dest_Zone'] = vendor_zone_df['DestCity'].apply(get_zone)
+
+                    # Build vendor zone matrix for Cars Lifted
+                    vendor_cars_matrix = {}
+                    for origin_zone in zones:
+                        vendor_cars_matrix[origin_zone] = {}
+                        for dest_zone in zones:
+                            count = vendor_zone_df[(vendor_zone_df['Origin_Zone'] == origin_zone) & (vendor_zone_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
+                            vendor_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+                    # Build vendor zone matrix for Trips Count (unique date + vehicle combinations)
+                    vendor_trips_matrix = {}
+                    for origin_zone in zones:
+                        vendor_trips_matrix[origin_zone] = {}
+                        for dest_zone in zones:
+                            zone_data = vendor_zone_df[(vendor_zone_df['Origin_Zone'] == origin_zone) & (vendor_zone_df['Dest_Zone'] == dest_zone)]
+                            # Count unique combinations of CNDate + VehicleNo
+                            if not zone_data.empty:
+                                count = zone_data.groupby(['CNDateOnly', 'VehicleNo']).ngroups
+                            else:
+                                count = 0
+                            vendor_trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+                    # Get max values for scaling
+                    vendor_cars_values = [v for row in vendor_cars_matrix.values() for v in row.values() if v > 0]
+                    vendor_trips_values = [v for row in vendor_trips_matrix.values() for v in row.values() if v > 0]
+                    max_vendor_cars = max(vendor_cars_values) if vendor_cars_values else 1
+                    max_vendor_trips = max(vendor_trips_values) if vendor_trips_values else 1
+
+                    # Calculate vendor totals
+                    vendor_total_cars = int(vendor_zone_df['CarQty'].sum())
+                    # Trips = unique combinations of date + vehicle
+                    vendor_total_trips = vendor_zone_df.groupby(['CNDateOnly', 'VehicleNo']).ngroups
+
+                    # Function to build vendor zone table HTML (purple theme)
+                    def build_vendor_zone_table(matrix, title, max_val, actual_grand_total):
+                        html = f"""
+                        <style>
+                            .vendor-zone-table {{ width: 100%; border-collapse: collapse; font-size: 14px; border: 2px solid #7c3aed; }}
+                            .vendor-zone-table th {{ background-color: #5b21b6; color: white; padding: 12px; text-align: center; border: 1px solid #7c3aed; }}
+                            .vendor-zone-table td {{ padding: 10px; border: 1px solid #4c1d95; color: white; text-align: center; }}
+                            .vendor-zone-table tr:nth-child(even) {{ background-color: #1a1f2e; }}
+                            .vendor-zone-table tr:nth-child(odd) {{ background-color: #0e1117; }}
+                            .vendor-zone-table .total-row {{ background-color: #7c3aed !important; font-weight: bold; }}
+                            .vendor-zone-table .total-row td {{ border: 1px solid #7c3aed; }}
+                            .vendor-zone-table .row-header {{ text-align: left; font-weight: bold; font-style: italic; }}
+                            .vendor-zone-table .grand-total {{ color: #fbbf24; font-weight: bold; }}
+                        </style>
+                        <table class="vendor-zone-table">
+                            <thead>
+                                <tr>
+                                    <th style="font-style: italic;">Origin Zone</th>
+                        """
+                        for dest_zone in zones:
+                            html += f'<th>{dest_zone}</th>'
+                        html += '<th>Grand Total</th></tr></thead><tbody>'
+
+                        col_totals = {z: 0 for z in zones}
+
+                        for origin_zone in zones:
+                            row_total = 0
+                            html += f'<tr><td class="row-header">{origin_zone}</td>'
+                            for dest_zone in zones:
+                                val = matrix[origin_zone][dest_zone]
+                                if val > 0:
+                                    row_total += val
+                                    col_totals[dest_zone] += val
+                                    html += f'<td style="color: #a78bfa;">{val}</td>'
+                                else:
+                                    html += '<td></td>'
+                            html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
+
+                        html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
+                        for dest_zone in zones:
+                            html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
+                        html += f'<td class="grand-total">{actual_grand_total}</td></tr>'
+
+                        html += '</tbody></table>'
+                        return html
+
+                    # Display vendor tables side by side
+                    col_vendor1, col_vendor2 = st.columns(2)
+
+                    with col_vendor1:
+                        st.markdown("##### Vendor - Cars Lifted")
+                        vendor_cars_html = build_vendor_zone_table(vendor_cars_matrix, "", max_vendor_cars, vendor_total_cars)
+                        components.html(vendor_cars_html, height=280)
+
+                    with col_vendor2:
+                        st.markdown("##### Vendor - Trips")
+                        vendor_trips_html = build_vendor_zone_table(vendor_trips_matrix, "", max_vendor_trips, vendor_total_trips)
+                        components.html(vendor_trips_html, height=280)
+                else:
+                    st.info("No mapped vendor data for this month.")
+            else:
+                st.info("No vendor data for this month.")
+        else:
+            st.info("No vendor data available.")
 
         # Chart: Zone by Car Lifted (excluding DC Movement)
         st.markdown("---")
