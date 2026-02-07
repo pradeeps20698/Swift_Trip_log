@@ -157,7 +157,7 @@ def load_vendor_data():
             return pd.DataFrame()
 
         query = """
-            SELECT billing_party, cn_date, qty, basic_freight, route, origin
+            SELECT billing_party, cn_date, qty, basic_freight, route, origin, vehicle_no
             FROM cn_data
             WHERE (billing_party = 'R.sai Logistics India Pvt. Ltd.' AND tl_no IS NULL)
                OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle')
@@ -172,7 +172,8 @@ def load_vendor_data():
             'qty': 'CarQty',
             'basic_freight': 'Freight',
             'route': 'Route',
-            'origin': 'Origin'
+            'origin': 'Origin',
+            'vehicle_no': 'VehicleNo'
         })
 
         # Convert date
@@ -904,14 +905,42 @@ def main():
                 (df['CarQty'] > 0)
             ]
 
-            # Total Cars Lifted
-            total_cars_lifted = int(daily_data['CarQty'].sum())
-            total_trips_count = len(daily_data)
+            # Own totals
+            own_cars_lifted = int(daily_data['CarQty'].sum())
+            own_trips_count = len(daily_data)
+
+            # Vendor totals for selected date
+            vendor_cars_lifted = 0
+            vendor_trips_count = 0
+            if not vendor_df.empty:
+                vendor_daily_data = vendor_df[vendor_df['CNDateOnly'] == selected_date].copy()
+                if not vendor_daily_data.empty:
+                    vendor_daily_data['MappedParty'] = vendor_daily_data.apply(
+                        lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                    )
+                    vendor_daily_data = vendor_daily_data[vendor_daily_data['MappedParty'].notna()]
+                    vendor_cars_lifted = int(vendor_daily_data['CarQty'].sum())
+                    # Trips = unique vehicle numbers
+                    vendor_trips_count = vendor_daily_data['VehicleNo'].nunique()
+
+            # Total (Own + Vendor)
+            total_cars_lifted = own_cars_lifted + vendor_cars_lifted
+            total_trips_count = own_trips_count + vendor_trips_count
 
             with col_cars:
                 st.markdown(f"""
                 <div style="background: linear-gradient(90deg, #22c55e, #16a34a); padding: 15px 25px; border-radius: 8px; text-align: center; margin-top: 25px;">
                     <span style="color: white; font-weight: bold; font-size: 20px;">Total Cars Lifted: {total_cars_lifted}</span>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 8px;">
+                    <div style="flex: 1; background: #1e3a5f; padding: 6px; border-radius: 6px; text-align: center;">
+                        <div style="color: #9ca3af; font-size: 10px;">Own</div>
+                        <div style="color: white; font-size: 13px; font-weight: bold;">{own_cars_lifted:,}</div>
+                    </div>
+                    <div style="flex: 1; background: #4a3728; padding: 6px; border-radius: 6px; text-align: center;">
+                        <div style="color: #9ca3af; font-size: 10px;">Vendor</div>
+                        <div style="color: #f59e0b; font-size: 13px; font-weight: bold;">{vendor_cars_lifted:,}</div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -919,6 +948,16 @@ def main():
                 st.markdown(f"""
                 <div style="background: linear-gradient(90deg, #3b82f6, #2563eb); padding: 15px 25px; border-radius: 8px; text-align: center; margin-top: 25px;">
                     <span style="color: white; font-weight: bold; font-size: 20px;">Total Trips: {total_trips_count}</span>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 8px;">
+                    <div style="flex: 1; background: #1e3a5f; padding: 6px; border-radius: 6px; text-align: center;">
+                        <div style="color: #9ca3af; font-size: 10px;">Own</div>
+                        <div style="color: white; font-size: 13px; font-weight: bold;">{own_trips_count:,}</div>
+                    </div>
+                    <div style="flex: 1; background: #4a3728; padding: 6px; border-radius: 6px; text-align: center;">
+                        <div style="color: #9ca3af; font-size: 10px;">Vendor</div>
+                        <div style="color: #f59e0b; font-size: 13px; font-weight: bold;">{vendor_trips_count:,}</div>
+                    </div>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -942,7 +981,7 @@ def main():
                     html_trips = """
                     <style>
                         .trips-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                        .trips-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
+                        .trips-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; position: sticky; top: 0; z-index: 10; }
                         .trips-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
                         .trips-table tr:nth-child(even) { background-color: #1a1f2e; }
                         .trips-table tr:nth-child(odd) { background-color: #0e1117; }
@@ -989,7 +1028,75 @@ def main():
                     html_trips += "</tbody></table></div>"
                     components.html(html_trips, height=500, scrolling=True)
                 else:
-                    st.info("No trips found for the selected date.")
+                    st.info("No own trips found for the selected date.")
+
+                # Vendor Data Section (inside col_left)
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown(f"**Vendor Loading Details {selected_date.strftime('%d-%b-%Y')}**")
+
+                # Filter vendor data for selected date
+                if not vendor_df.empty:
+                    vendor_daily = vendor_df[vendor_df['CNDateOnly'] == selected_date].copy()
+                    if not vendor_daily.empty:
+                        # Apply vendor mapping
+                        vendor_daily['MappedParty'] = vendor_daily.apply(
+                            lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                        )
+                        vendor_daily = vendor_daily[vendor_daily['MappedParty'].notna()]
+
+                    if not vendor_daily.empty:
+                        # Build vendor HTML table
+                        html_vendor = """
+                        <style>
+                            .vendor-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                            .vendor-table th { background-color: #7c3aed; color: white; padding: 10px; text-align: left; border: 1px solid #8b5cf6; position: sticky; top: 0; z-index: 10; }
+                            .vendor-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
+                            .vendor-table tr:nth-child(even) { background-color: #1a1f2e; }
+                            .vendor-table tr:nth-child(odd) { background-color: #0e1117; }
+                            .vendor-table tr:hover { background-color: #2d3748; }
+                        </style>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                        <table class="vendor-table">
+                            <thead>
+                                <tr>
+                                    <th>S.No.</th>
+                                    <th>Date</th>
+                                    <th>Vehicle No</th>
+                                    <th>Mapped To</th>
+                                    <th>Route</th>
+                                    <th>Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                        """
+                        vendor_total_qty = 0
+                        for idx, (_, row) in enumerate(vendor_daily.iterrows(), 1):
+                            date_str = row['CNDate'].strftime('%d/%m/%Y') if pd.notna(row['CNDate']) else ''
+                            vehicle_no = row['VehicleNo'] if pd.notna(row.get('VehicleNo')) else ''
+                            qty = int(row['CarQty']) if pd.notna(row['CarQty']) else 0
+                            vendor_total_qty += qty
+                            html_vendor += f"""
+                                <tr>
+                                    <td>{idx}</td>
+                                    <td>{date_str}</td>
+                                    <td>{vehicle_no}</td>
+                                    <td>{row['MappedParty']}</td>
+                                    <td>{row['Route']}</td>
+                                    <td style="text-align: center;">{qty}</td>
+                                </tr>
+                            """
+                        html_vendor += f"""
+                                <tr style="background-color: #7c3aed !important; font-weight: bold;">
+                                    <td colspan="5" style="text-align: right; color: white;">Grand Total</td>
+                                    <td style="text-align: center; color: #fbbf24; font-size: 15px;">{vendor_total_qty}</td>
+                                </tr>
+                            """
+                        html_vendor += "</tbody></table></div>"
+                        components.html(html_vendor, height=350, scrolling=True)
+                    else:
+                        st.info("No vendor trips found for the selected date.")
+                else:
+                    st.info("No vendor data available.")
 
             with col_right:
                 st.markdown(f"**OEM's Wise Total Loads {selected_date.strftime('%d-%b-%Y')}**")
@@ -997,9 +1104,10 @@ def main():
                 if len(daily_data) > 0:
                     # Party-wise summary
                     party_summary = daily_data.groupby('DisplayParty').agg({
-                        'TLHSNo': 'count'
+                        'TLHSNo': 'count',
+                        'CarQty': 'sum'
                     }).reset_index()
-                    party_summary.columns = ['Party Name', 'Trip Count']
+                    party_summary.columns = ['Party Name', 'Trip Count', 'Qty']
                     party_summary = party_summary[party_summary['Party Name'] != '']
                     party_summary = party_summary.sort_values('Trip Count', ascending=False)
 
@@ -1007,7 +1115,7 @@ def main():
                     html_summary = """
                     <style>
                         .summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                        .summary-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
+                        .summary-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; position: sticky; top: 0; z-index: 10; }
                         .summary-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
                         .summary-table tr:nth-child(even) { background-color: #1a1f2e; }
                         .summary-table tr:nth-child(odd) { background-color: #0e1117; }
@@ -1019,20 +1127,25 @@ def main():
                             <tr>
                                 <th>#</th>
                                 <th>Party Name</th>
-                                <th>Trip Count</th>
+                                <th>Trips</th>
+                                <th>Qty</th>
                             </tr>
                         </thead>
                         <tbody>
                     """
                     total_trip_count = 0
+                    total_qty = 0
                     for idx, (_, row) in enumerate(party_summary.iterrows(), 1):
                         trip_count = row['Trip Count']
+                        qty = int(row['Qty'])
                         total_trip_count += trip_count
+                        total_qty += qty
                         html_summary += f"""
                             <tr>
                                 <td>{idx}</td>
                                 <td>{row['Party Name']}</td>
                                 <td style="text-align: center; font-weight: bold; color: #22c55e;">{trip_count}</td>
+                                <td style="text-align: center; font-weight: bold; color: #a78bfa;">{qty}</td>
                             </tr>
                         """
                     # Add Grand Total row
@@ -1040,12 +1153,86 @@ def main():
                             <tr style="background-color: #1e40af !important; font-weight: bold;">
                                 <td colspan="2" style="text-align: right; color: white;">Grand Total</td>
                                 <td style="text-align: center; color: #fbbf24; font-size: 15px;">{total_trip_count}</td>
+                                <td style="text-align: center; color: #fbbf24; font-size: 15px;">{total_qty}</td>
                             </tr>
                         """
                     html_summary += "</tbody></table></div>"
                     components.html(html_summary, height=500, scrolling=True)
                 else:
                     st.info("No data available.")
+
+                # Vendor Summary - Mapped To wise
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.markdown(f"**Vendor Summary {selected_date.strftime('%d-%b-%Y')}**")
+
+                if not vendor_df.empty:
+                    vendor_daily_summary = vendor_df[vendor_df['CNDateOnly'] == selected_date].copy()
+                    if not vendor_daily_summary.empty:
+                        vendor_daily_summary['MappedParty'] = vendor_daily_summary.apply(
+                            lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                        )
+                        vendor_daily_summary = vendor_daily_summary[vendor_daily_summary['MappedParty'].notna()]
+
+                    if not vendor_daily_summary.empty:
+                        # Group by MappedParty - count unique vehicle numbers as trips and sum qty
+                        # Trip = unique combination of Date + Vehicle No + Mapped To (date already filtered)
+                        vendor_party_summary = vendor_daily_summary.groupby('MappedParty').agg({
+                            'CarQty': 'sum',
+                            'VehicleNo': 'nunique'  # Count of unique vehicles = No of Trips
+                        }).reset_index()
+                        vendor_party_summary.columns = ['Mapped To', 'Qty', 'Trips']
+                        vendor_party_summary = vendor_party_summary.sort_values('Qty', ascending=False)
+
+                        # Build HTML table
+                        html_vendor_summary = """
+                        <style>
+                            .vendor-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                            .vendor-summary-table th { background-color: #7c3aed; color: white; padding: 10px; text-align: left; border: 1px solid #8b5cf6; position: sticky; top: 0; z-index: 10; }
+                            .vendor-summary-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
+                            .vendor-summary-table tr:nth-child(even) { background-color: #1a1f2e; }
+                            .vendor-summary-table tr:nth-child(odd) { background-color: #0e1117; }
+                            .vendor-summary-table tr:hover { background-color: #2d3748; }
+                        </style>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                        <table class="vendor-summary-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Mapped To</th>
+                                    <th>Trips</th>
+                                    <th>Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                        """
+                        total_vendor_qty = 0
+                        total_vendor_trips = 0
+                        for idx, (_, row) in enumerate(vendor_party_summary.iterrows(), 1):
+                            qty = int(row['Qty'])
+                            trips = int(row['Trips'])
+                            total_vendor_qty += qty
+                            total_vendor_trips += trips
+                            html_vendor_summary += f"""
+                                <tr>
+                                    <td>{idx}</td>
+                                    <td>{row['Mapped To']}</td>
+                                    <td style="text-align: center; font-weight: bold; color: #22c55e;">{trips}</td>
+                                    <td style="text-align: center; font-weight: bold; color: #a78bfa;">{qty}</td>
+                                </tr>
+                            """
+                        html_vendor_summary += f"""
+                                <tr style="background-color: #7c3aed !important; font-weight: bold;">
+                                    <td colspan="2" style="text-align: right; color: white;">Grand Total</td>
+                                    <td style="text-align: center; color: #fbbf24; font-size: 15px;">{total_vendor_trips}</td>
+                                    <td style="text-align: center; color: #fbbf24; font-size: 15px;">{total_vendor_qty}</td>
+                                </tr>
+                            """
+                        html_vendor_summary += "</tbody></table></div>"
+                        components.html(html_vendor_summary, height=300, scrolling=True)
+                    else:
+                        st.info("No vendor data for this date.")
+                else:
+                    st.info("No vendor data available.")
 
         # Call the fragment
         daily_loading_fragment()
