@@ -248,6 +248,7 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) BLR': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
         'M/S Mohan Logistics Private  Limited': 'M/S Mohan Logistics Private Limited',
         'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
+        'John Deere india Private Limited': 'John Deere India Private Limited',
     }
 
     # If billing_party matches a mapping, return it; otherwise map to Market Load
