@@ -2045,12 +2045,13 @@ def main():
                 # Build HTML table
                 pending_html = """
                 <style>
-                    .pending-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-                    .pending-table th { background-color: #dc2626; color: white; padding: 8px; text-align: left; position: sticky; top: 0; }
+                    .pending-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+                    .pending-table thead { position: sticky; top: 0; z-index: 10; }
+                    .pending-table th { background-color: #dc2626; color: white; padding: 8px; text-align: left; }
                     .pending-table td { padding: 6px 8px; border-bottom: 1px solid #374151; color: white; }
                     .pending-table tr:hover { background-color: #1f2937; }
                 </style>
-                <div style="max-height: 450px; overflow-y: auto;">
+                <div style="max-height: 550px; overflow-y: auto;">
                 <table class="pending-table">
                     <thead>
                         <tr>
@@ -2066,19 +2067,20 @@ def main():
                     pending_html += "</tr>"
 
                 pending_html += "</tbody></table></div>"
-                components.html(pending_html, height=450, scrolling=True)
+                components.html(pending_html, height=550, scrolling=True)
+
+                # Download button for Pending CN data
+                pending_csv = display_df.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Pending CN Data",
+                    data=pending_csv,
+                    file_name=f"pending_cn_trips_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="pending_cn_download"
+                )
         else:
             st.success("No pending CN trips found for this month!")
 
-    # Download section
-    st.markdown("---")
-    csv = month_df.to_csv(index=False)
-    st.download_button(
-        label="📥 Download Data as CSV",
-        data=csv,
-        file_name=f"swift_trip_log_{selected_month.strftime('%Y%m')}.csv",
-        mime="text/csv"
-    )
 
 
 if __name__ == "__main__":
