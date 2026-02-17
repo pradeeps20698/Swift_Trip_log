@@ -78,7 +78,8 @@ def get_db_connection():
             database=st.secrets["database_name"],
             user=st.secrets["UserName"],
             password=st.secrets["Password"],
-            port=st.secrets["Port"]
+            port=st.secrets["Port"],
+            connect_timeout=10
         )
         return conn
     except Exception as e:
@@ -308,6 +309,10 @@ def normalize_party_name(party_name):
     if party_upper == "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) UP":
         return "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)"
 
+    # John Deere mappings
+    if "JOHN DEERE" in party_upper:
+        return "John Deere India Private Limited"
+
     return party_name
 
 
@@ -328,6 +333,8 @@ def get_client_category(party_name):
         return "Glovis"
     elif "TATA" in party_upper:
         return "Tata"
+    elif "JOHN DEERE" in party_upper:
+        return "John Deere"
     elif "MARKET LOAD" in party_upper:
         return "Market Load"
     else:
@@ -345,7 +352,7 @@ def main():
         targets = load_targets()
 
     if df.empty:
-        st.error("No data available. Please check the JSON files.")
+        st.error("No data available. Please check the database connection.")
         return
 
     # Convert date columns
@@ -360,6 +367,11 @@ def main():
         df['DisplayParty'] = df['NewPartyName'].fillna(df['Party'])
     else:
         df['DisplayParty'] = df['Party']
+
+    # Override DisplayParty for John Deere (Party column has correct name but NewPartyName is Market Load)
+    if 'Party' in df.columns:
+        john_deere_mask = df['Party'].str.contains('John Deere', case=False, na=False)
+        df.loc[john_deere_mask, 'DisplayParty'] = 'John Deere India Private Limited'
 
     # Normalize party names (merge variations into single name)
     df['DisplayParty'] = df['DisplayParty'].apply(normalize_party_name)
@@ -448,10 +460,11 @@ def main():
     # Calculate Vendor metrics for full month
     vendor_cars = 0
     vendor_freight = 0.0
+    vendor_trips = 0
     if not vendor_df.empty:
         vendor_month_df = vendor_df[
-            (vendor_df['CNDateOnly'] >= month_start.date()) &
-            (vendor_df['CNDateOnly'] <= month_end.date())
+            (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
+            (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
         ].copy()
         if not vendor_month_df.empty:
             # Apply vendor mapping to filter only mapped vendors
@@ -461,9 +474,14 @@ def main():
             vendor_mapped = vendor_month_df[vendor_month_df['MappedParty'].notna()]
             vendor_cars = int(vendor_mapped['CarQty'].sum())
             vendor_freight = vendor_mapped['Freight'].sum()
+            # Vendor trips = unique combinations of date + vehicle
+            if not vendor_mapped.empty:
+                vendor_mapped['CNDateOnly'] = vendor_mapped['CNDate'].dt.date
+                vendor_trips = vendor_mapped.groupby(['CNDateOnly', 'VehicleNo']).ngroups
 
     # Total (Own + Vendor)
     total_cars = own_cars + vendor_cars
+    total_trips = loaded_trips + vendor_trips
     total_freight = own_freight + vendor_freight
     total_freight_lakhs = total_freight / 100000
 
@@ -474,7 +492,17 @@ def main():
         st.markdown(f"""
         <div class="metric-card-blue">
             <div class="metric-label">Loaded Trips</div>
-            <div class="metric-value">{loaded_trips:,}</div>
+            <div class="metric-value">{total_trips:,}</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Own</div>
+                    <div style="color: white; font-size: 12px; font-weight: bold;">{loaded_trips:,}</div>
+                </div>
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Vendor</div>
+                    <div style="color: #f59e0b; font-size: 12px; font-weight: bold;">{vendor_trips:,}</div>
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -483,6 +511,16 @@ def main():
         <div class="metric-card-blue">
             <div class="metric-label">Empty Trips</div>
             <div class="metric-value">{empty_trips:,}</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Own</div>
+                    <div style="color: white; font-size: 12px; font-weight: bold;">{empty_trips:,}</div>
+                </div>
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Vendor</div>
+                    <div style="color: #f59e0b; font-size: 12px; font-weight: bold;">0</div>
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -491,15 +529,15 @@ def main():
         <div class="metric-card-blue">
             <div class="metric-label">Cars Lifted</div>
             <div class="metric-value">{total_cars:,}</div>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 8px;">
-            <div style="flex: 1; background: #1e3a5f; padding: 8px; border-radius: 6px; text-align: center;">
-                <div style="color: #9ca3af; font-size: 10px;">Own</div>
-                <div style="color: white; font-size: 14px; font-weight: bold;">{own_cars:,}</div>
-            </div>
-            <div style="flex: 1; background: #4a3728; padding: 8px; border-radius: 6px; text-align: center;">
-                <div style="color: #9ca3af; font-size: 10px;">Vendor</div>
-                <div style="color: #f59e0b; font-size: 14px; font-weight: bold;">{vendor_cars:,}</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Own</div>
+                    <div style="color: white; font-size: 12px; font-weight: bold;">{own_cars:,}</div>
+                </div>
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Vendor</div>
+                    <div style="color: #f59e0b; font-size: 12px; font-weight: bold;">{vendor_cars:,}</div>
+                </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -509,15 +547,15 @@ def main():
         <div class="metric-card-red">
             <div class="metric-label">Total Freight</div>
             <div class="metric-value">₹{total_freight_lakhs:.2f}L</div>
-        </div>
-        <div style="display: flex; gap: 10px; margin-top: 8px;">
-            <div style="flex: 1; background: #1e3a5f; padding: 8px; border-radius: 6px; text-align: center;">
-                <div style="color: #9ca3af; font-size: 10px;">Own</div>
-                <div style="color: white; font-size: 14px; font-weight: bold;">₹{own_freight/100000:.2f}L</div>
-            </div>
-            <div style="flex: 1; background: #4a3728; padding: 8px; border-radius: 6px; text-align: center;">
-                <div style="color: #9ca3af; font-size: 10px;">Vendor</div>
-                <div style="color: #f59e0b; font-size: 14px; font-weight: bold;">₹{vendor_freight/100000:.2f}L</div>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Own</div>
+                    <div style="color: white; font-size: 12px; font-weight: bold;">₹{own_freight/100000:.2f}L</div>
+                </div>
+                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                    <div style="color: #9ca3af; font-size: 9px;">Vendor</div>
+                    <div style="color: #f59e0b; font-size: 12px; font-weight: bold;">₹{vendor_freight/100000:.2f}L</div>
+                </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -527,7 +565,7 @@ def main():
         st.session_state.selected_tab = 0
 
     # Tabs with key to maintain state
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "📋 Pending CN - Triplogs"])
 
     with tab1:
         month_display = selected_month.strftime("%b'%y")
@@ -583,10 +621,10 @@ def main():
         summary['Vendor_Freight'] = 0.0
 
         if not vendor_df.empty:
-            # Filter vendor data for current period
+            # Filter vendor data for current period (convert to Timestamp for consistent comparison)
             vendor_current = vendor_df[
-                (vendor_df['CNDateOnly'] >= select_month_start) &
-                (vendor_df['CNDateOnly'] <= till_date)
+                (vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
+                (vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
             ].copy()
 
             if not vendor_current.empty:
@@ -642,7 +680,7 @@ def main():
             summary['Compare_Freight'] = 0
 
         # Build final table with category totals
-        category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'Market Load', 'Other']
+        category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Market Load', 'Other']
         category_colors = {
             'Honda': '#ff6b35',
             'M & M': '#2e8b57',
@@ -650,6 +688,7 @@ def main():
             'Skoda': '#8b5cf6',
             'Glovis': '#f59e0b',
             'Tata': '#06b6d4',
+            'John Deere': '#22c55e',
             'Market Load': '#ec4899',
             'Other': '#6b7280',
             'Grand': '#1e40af'
@@ -687,8 +726,8 @@ def main():
                 # Add to grand total target (for all categories)
                 grand_total['Target_SQR'] += category_target_sum
 
-                # Add category total (skip for Market Load and Other)
-                if category not in ['Market Load', 'Other']:
+                # Add category total (skip for Market Load, Other, and John Deere)
+                if category not in ['Market Load', 'Other', 'John Deere']:
                     final_rows.append({
                         'Client - Wise': f"{category} - Total",
                         'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
@@ -936,7 +975,10 @@ def main():
             vendor_cars_lifted = 0
             vendor_trips_count = 0
             if not vendor_df.empty:
-                vendor_daily_data = vendor_df[vendor_df['CNDateOnly'] == selected_date].copy()
+                vendor_daily_data = vendor_df[
+                    (vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
+                    (vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+                ].copy()
                 if not vendor_daily_data.empty:
                     vendor_daily_data['MappedParty'] = vendor_daily_data.apply(
                         lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
@@ -1059,7 +1101,10 @@ def main():
 
                 # Filter vendor data for selected date
                 if not vendor_df.empty:
-                    vendor_daily = vendor_df[vendor_df['CNDateOnly'] == selected_date].copy()
+                    vendor_daily = vendor_df[
+                        (vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
+                        (vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+                    ].copy()
                     if not vendor_daily.empty:
                         # Apply vendor mapping
                         vendor_daily['MappedParty'] = vendor_daily.apply(
@@ -1189,7 +1234,10 @@ def main():
                 st.markdown(f"**Vendor Summary {selected_date.strftime('%d-%b-%Y')}**")
 
                 if not vendor_df.empty:
-                    vendor_daily_summary = vendor_df[vendor_df['CNDateOnly'] == selected_date].copy()
+                    vendor_daily_summary = vendor_df[
+                        (vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
+                        (vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+                    ].copy()
                     if not vendor_daily_summary.empty:
                         vendor_daily_summary['MappedParty'] = vendor_daily_summary.apply(
                             lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
@@ -1301,6 +1349,14 @@ def main():
                 pattern = '|'.join([v.replace(' ', '.*') for v in gujarat_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
+            def get_nsk_ckn_local(data):
+                # Load NSK/Ckn-north dedicated vehicles dynamically from swift_vehicles
+                nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
+                if not nsk_ckn_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in nsk_ckn_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+
             # Filter month_df to only include loaded trips
             loaded_month_df = month_df[
                 (month_df['DisplayParty'] != '') &
@@ -1315,6 +1371,7 @@ def main():
             road_pilot = get_road_pilot(loaded_month_df)
             kia_local = get_kia_local(loaded_month_df)
             gujarat_local = get_gujarat_local(loaded_month_df)
+            nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
 
             # Summary data for all categories
             summary_data = [
@@ -1324,6 +1381,7 @@ def main():
                 {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
                 {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
                 {'Category': 'Gujarat Local', 'Trips': len(gujarat_local), 'Cars': int(gujarat_local['CarQty'].sum()), 'Freight': gujarat_local['Freight'].sum()},
+                {'Category': 'NSK/Ckn-north dedicated', 'Trips': len(nsk_ckn_local), 'Cars': int(nsk_ckn_local['CarQty'].sum()), 'Freight': nsk_ckn_local['Freight'].sum()},
             ]
 
             # Summary Section
@@ -1380,7 +1438,7 @@ def main():
             st.markdown("#### Details by Category")
             col_filter, col_empty = st.columns([1, 3])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Gujarat Local']
+                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Gujarat Local', 'NSK/Ckn-north dedicated']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -1394,8 +1452,10 @@ def main():
                 filtered_df = road_pilot
             elif selected_category == 'Kia Local':
                 filtered_df = kia_local
-            else:
+            elif selected_category == 'Gujarat Local':
                 filtered_df = gujarat_local
+            else:
+                filtered_df = nsk_ckn_local
 
             if len(filtered_df) > 0:
                 # Sort by LoadingDate ascending
@@ -1689,8 +1749,8 @@ def main():
         if not vendor_df.empty:
             # Filter vendor data for the month
             vendor_zone_df = vendor_df[
-                (vendor_df['CNDateOnly'] >= month_start.date()) &
-                (vendor_df['CNDateOnly'] <= month_end.date())
+                (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
+                (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
             ].copy()
 
             if not vendor_zone_df.empty:
@@ -1869,6 +1929,146 @@ def main():
                     st.write("**Origins:**", ', '.join(sorted(set(other_origins))))
                 if len(other_dests) > 0:
                     st.write("**Destinations:**", ', '.join(sorted(set(other_dests))))
+
+    with tab5:
+        st.markdown("### Pending CN - Triplogs")
+
+        # D-3 date filter (show trips loaded on or before 3 days ago)
+        d_minus_3 = datetime.now().date() - timedelta(days=3)
+
+        # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
+        pending_cn_df = month_df[
+            (month_df['TripStatus'] == 'Loaded') &
+            ((month_df['LRNos'].isna()) | (month_df['LRNos'] == '') | (month_df['LRNos'].str.strip() == '')) &
+            (month_df['LoadingDate'].dt.date <= d_minus_3)
+        ].copy()
+
+        # Cross-check with cn_data to exclude trips that have CN records
+        if len(pending_cn_df) > 0:
+            try:
+                conn = get_db_connection()
+                if conn is not None:
+                    # Load cn_data for matching
+                    cn_query = """
+                        SELECT DISTINCT cn_date, vehicle_no
+                        FROM cn_data
+                        WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
+                    """
+                    cn_records = pd.read_sql_query(cn_query, conn)
+                    conn.close()
+
+                    if not cn_records.empty:
+                        cn_records['cn_date'] = pd.to_datetime(cn_records['cn_date'], errors='coerce').dt.date
+                        cn_records['vehicle_no'] = cn_records['vehicle_no'].str.upper().str.strip()
+
+                        # Create lookup key for cn_data
+                        cn_records['lookup_key'] = cn_records['cn_date'].astype(str) + '_' + cn_records['vehicle_no']
+                        cn_keys = set(cn_records['lookup_key'].tolist())
+
+                        # Create lookup key for pending trips
+                        pending_cn_df['LoadingDateOnly'] = pending_cn_df['LoadingDate'].dt.date
+                        pending_cn_df['VehicleNoClean'] = pending_cn_df['VehicleNo'].str.upper().str.strip()
+                        pending_cn_df['lookup_key'] = pending_cn_df['LoadingDateOnly'].astype(str) + '_' + pending_cn_df['VehicleNoClean']
+
+                        # Exclude trips that have matching CN records
+                        pending_cn_df = pending_cn_df[~pending_cn_df['lookup_key'].isin(cn_keys)]
+            except Exception as e:
+                st.warning(f"Could not cross-check with cn_data: {e}")
+
+        st.caption(f"*Showing trips loaded on or before {d_minus_3.strftime('%d-%b-%Y')} (D-3)*")
+
+        if len(pending_cn_df) > 0:
+            # Sort by loading date
+            pending_cn_df = pending_cn_df.sort_values('LoadingDate', ascending=True)
+
+            # Prepare display table data
+            display_cols = ['TLHSNo', 'LoadingDate', 'VehicleNo', 'DriverName', 'DriverCode', 'Route', 'Party', 'CarQty']
+            available_cols = [col for col in display_cols if col in pending_cn_df.columns]
+
+            display_df = pending_cn_df[available_cols].copy()
+            display_df['LoadingDate'] = display_df['LoadingDate'].dt.strftime('%d-%b-%Y')
+
+            # Combine Driver Name with Code
+            display_df['Driver'] = display_df.apply(
+                lambda row: f"{row['DriverName']} ({row['DriverCode']})" if pd.notna(row['DriverCode']) and row['DriverCode'] != '' else row['DriverName'],
+                axis=1
+            )
+
+            # Select final columns
+            final_cols = ['TLHSNo', 'LoadingDate', 'VehicleNo', 'Driver', 'Route', 'Party', 'CarQty']
+            display_df = display_df[final_cols]
+            display_df.columns = ['Trip No', 'Loading Date', 'Vehicle No', 'Driver', 'Route', 'Party', 'Cars']
+
+            # Layout: Summary on left, Table on right
+            col_left, col_right = st.columns([1, 3])
+
+            with col_left:
+                # Total Summary
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="color: #fecaca; font-size: 12px;">Total Pending Trips</div>
+                    <div style="color: white; font-size: 28px; font-weight: bold;">{len(pending_cn_df)}</div>
+                </div>
+                <div style="background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <div style="color: #bfdbfe; font-size: 12px;">Total Cars</div>
+                    <div style="color: white; font-size: 28px; font-weight: bold;">{int(pending_cn_df['CarQty'].sum())}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Party-wise summary
+                party_summary = pending_cn_df.groupby('Party').agg({
+                    'TLHSNo': 'count',
+                    'CarQty': 'sum'
+                }).reset_index()
+                party_summary.columns = ['Party', 'Trips', 'Cars']
+                party_summary = party_summary.sort_values('Trips', ascending=False)
+                party_summary['Cars'] = party_summary['Cars'].astype(int)
+
+                st.markdown("**Party-wise Summary**")
+                party_html = """
+                <style>
+                    .party-summary { width: 100%; border-collapse: collapse; font-size: 11px; }
+                    .party-summary th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
+                    .party-summary td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
+                    .party-summary tr:nth-child(even) { background-color: #1f2937; }
+                </style>
+                <table class="party-summary">
+                    <thead><tr><th>Party</th><th style="text-align:center;">Trips</th><th style="text-align:center;">Cars</th></tr></thead>
+                    <tbody>
+                """
+                for _, row in party_summary.iterrows():
+                    party_html += f"<tr><td>{row['Party'][:35]}{'...' if len(str(row['Party'])) > 35 else ''}</td><td style='text-align:center; color: #fbbf24;'>{row['Trips']}</td><td style='text-align:center; color: #34d399;'>{row['Cars']}</td></tr>"
+                party_html += "</tbody></table>"
+                components.html(party_html, height=min(len(party_summary) * 30 + 35, 350), scrolling=True)
+
+            with col_right:
+                # Build HTML table
+                pending_html = """
+                <style>
+                    .pending-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+                    .pending-table th { background-color: #dc2626; color: white; padding: 8px; text-align: left; position: sticky; top: 0; }
+                    .pending-table td { padding: 6px 8px; border-bottom: 1px solid #374151; color: white; }
+                    .pending-table tr:hover { background-color: #1f2937; }
+                </style>
+                <div style="max-height: 450px; overflow-y: auto;">
+                <table class="pending-table">
+                    <thead>
+                        <tr>
+                """
+                for col in display_df.columns:
+                    pending_html += f"<th>{col}</th>"
+                pending_html += "</tr></thead><tbody>"
+
+                for _, row in display_df.iterrows():
+                    pending_html += "<tr>"
+                    for col in display_df.columns:
+                        pending_html += f"<td>{row[col]}</td>"
+                    pending_html += "</tr>"
+
+                pending_html += "</tbody></table></div>"
+                components.html(pending_html, height=450, scrolling=True)
+        else:
+            st.success("No pending CN trips found for this month!")
 
     # Download section
     st.markdown("---")
