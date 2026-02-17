@@ -254,30 +254,39 @@ def get_vendor_client_mapping(billing_party, origin=None):
     return vendor_mappings.get(billing_party, 'Market Load')
 
 
-def get_targets_path():
-    """Get the path to sob_targets.json (works locally and on Streamlit Cloud)"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(script_dir, 'sob_targets.json')
-
-
 def load_targets():
-    """Load target SQR data from JSON file"""
+    """Load target SOB data from database"""
     try:
-        with open(get_targets_path(), 'r') as f:
-            targets = json.load(f)
-        return targets
-    except:
+        conn = get_db_connection()
+        if conn is None:
+            return {}
+        cursor = conn.cursor()
+        cursor.execute("SELECT party_name, target_value FROM sob_targets")
+        rows = cursor.fetchall()
+        conn.close()
+        return {row[0]: row[1] for row in rows}
+    except Exception as e:
         return {}
 
 
-def save_targets(targets):
-    """Save target SQR data to JSON file (Note: Won't work on Streamlit Cloud - read-only filesystem)"""
+def save_target(party_name, target_value):
+    """Save single target SOB to database"""
     try:
-        with open(get_targets_path(), 'w') as f:
-            json.dump(targets, f, indent=2)
+        conn = get_db_connection()
+        if conn is None:
+            st.error("Database connection failed")
+            return False
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO sob_targets (party_name, target_value, updated_at)
+            VALUES (%s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (party_name) DO UPDATE SET target_value = %s, updated_at = CURRENT_TIMESTAMP
+        """, (party_name, target_value, target_value))
+        conn.commit()
+        conn.close()
         return True
     except Exception as e:
-        st.error(f"Error saving targets: {e}")
+        st.error(f"Error saving target: {e}")
         return False
 
 
@@ -422,9 +431,9 @@ def main():
             new_target = st.number_input("Target SOB", min_value=0, value=int(current_target), key='new_target')
 
             if st.button("💾 Save Target"):
-                targets[target_party] = new_target
-                if save_targets(targets):
+                if save_target(target_party, new_target):
                     st.success(f"Target saved for {target_party}: {new_target}")
+                    st.cache_data.clear()
                     st.rerun()
 
         # Show current targets
