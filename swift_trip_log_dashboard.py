@@ -495,11 +495,11 @@ def main():
             <div class="metric-value">{total_trips:,}</div>
             <div style="display: flex; gap: 8px; margin-top: 10px;">
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Own</div>
+                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
                     <div style="color: white; font-size: 16px; font-weight: bold;">{loaded_trips:,}</div>
                 </div>
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Vendor</div>
+                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
                     <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">{vendor_trips:,}</div>
                 </div>
             </div>
@@ -513,11 +513,11 @@ def main():
             <div class="metric-value">{empty_trips:,}</div>
             <div style="display: flex; gap: 8px; margin-top: 10px;">
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Own</div>
+                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
                     <div style="color: white; font-size: 16px; font-weight: bold;">{empty_trips:,}</div>
                 </div>
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Vendor</div>
+                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
                     <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">0</div>
                 </div>
             </div>
@@ -531,11 +531,11 @@ def main():
             <div class="metric-value">{total_cars:,}</div>
             <div style="display: flex; gap: 8px; margin-top: 10px;">
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Own</div>
+                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
                     <div style="color: white; font-size: 16px; font-weight: bold;">{own_cars:,}</div>
                 </div>
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Vendor</div>
+                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
                     <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">{vendor_cars:,}</div>
                 </div>
             </div>
@@ -549,11 +549,11 @@ def main():
             <div class="metric-value">₹{total_freight_lakhs:.2f}L</div>
             <div style="display: flex; gap: 8px; margin-top: 10px;">
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Own</div>
+                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
                     <div style="color: white; font-size: 16px; font-weight: bold;">₹{own_freight/100000:.2f}L</div>
                 </div>
                 <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #9ca3af; font-size: 11px;">Vendor</div>
+                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
                     <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">₹{vendor_freight/100000:.2f}L</div>
                 </div>
             </div>
