@@ -294,6 +294,57 @@ def save_target(party_name, target_value):
         return False
 
 
+def load_excluded_trips():
+    """Load excluded trip numbers from database"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return []
+        cursor = conn.cursor()
+        cursor.execute("SELECT trip_no FROM excluded_pending_trips ORDER BY excluded_at DESC")
+        rows = cursor.fetchall()
+        conn.close()
+        return [row[0] for row in rows]
+    except Exception as e:
+        return []
+
+
+def add_excluded_trip(trip_no):
+    """Add a trip to the exclusion list"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO excluded_pending_trips (trip_no)
+            VALUES (%s)
+            ON CONFLICT (trip_no) DO NOTHING
+        """, (trip_no.strip(),))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error adding excluded trip: {e}")
+        return False
+
+
+def remove_excluded_trip(trip_no):
+    """Remove a trip from the exclusion list"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM excluded_pending_trips WHERE trip_no = %s", (trip_no,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        st.error(f"Error removing excluded trip: {e}")
+        return False
+
+
 def normalize_party_name(party_name):
     """Map party name variations to a single standardized name for display"""
     if pd.isna(party_name) or party_name == "":
@@ -447,6 +498,39 @@ def main():
                 st.text(f"{party[:20]}: {target}")
         else:
             st.text("No targets set")
+
+    # Exclude Trips from Pending CN Section
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("Pending CN Exclusions")
+
+    with st.sidebar.expander("Manage Exclusions", expanded=False):
+        # Add new exclusion
+        new_trip_no = st.text_input("Trip No to Exclude", placeholder="e.g., T-196375", key='exclude_trip_input')
+
+        if st.button("➕ Add Exclusion"):
+            if new_trip_no:
+                if add_excluded_trip(new_trip_no):
+                    st.success(f"Added: {new_trip_no}")
+                    st.cache_data.clear()
+                    st.rerun()
+            else:
+                st.warning("Enter a trip number")
+
+        # Show current exclusions
+        st.markdown("**Excluded Trips:**")
+        excluded_trips = load_excluded_trips()
+        if excluded_trips:
+            for trip in excluded_trips:
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.text(trip)
+                with col2:
+                    if st.button("❌", key=f"remove_{trip}"):
+                        if remove_excluded_trip(trip):
+                            st.cache_data.clear()
+                            st.rerun()
+        else:
+            st.text("No exclusions")
 
     # Filter data for selected month
     month_start = selected_month.replace(day=1)
@@ -1949,11 +2033,15 @@ def main():
         # D-3 date filter (show trips loaded on or before 3 days ago)
         d_minus_3 = datetime.now().date() - timedelta(days=3)
 
+        # Load excluded trips from database
+        excluded_trips = load_excluded_trips()
+
         # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
         pending_cn_df = month_df[
             (month_df['TripStatus'] == 'Loaded') &
             ((month_df['LRNos'].isna()) | (month_df['LRNos'] == '') | (month_df['LRNos'].str.strip() == '')) &
-            (month_df['LoadingDate'].dt.date <= d_minus_3)
+            (month_df['LoadingDate'].dt.date <= d_minus_3) &
+            (~month_df['TLHSNo'].isin(excluded_trips))
         ].copy()
 
         # Cross-check with cn_data to exclude trips that have CN records
