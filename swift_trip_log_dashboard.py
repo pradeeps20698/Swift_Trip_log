@@ -160,8 +160,9 @@ def load_vendor_data():
         query = """
             SELECT billing_party, cn_date, qty, basic_freight, route, origin, vehicle_no
             FROM cn_data
-            WHERE (billing_party = 'R.sai Logistics India Pvt. Ltd.' AND tl_no IS NULL)
-               OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle')
+            WHERE ((billing_party = 'R.sai Logistics India Pvt. Ltd.' AND tl_no IS NULL)
+               OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle'))
+               AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
