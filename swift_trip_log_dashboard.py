@@ -249,9 +249,12 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'M/S Mohan Logistics Private  Limited': 'M/S Mohan Logistics Private Limited',
         'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
         'John Deere india Private Limited': 'John Deere India Private Limited',
+        'Glovis India Pvt Ltd - Pune': 'Glovis India Pvt Ltd - Pune',
+        'shiv ansh logistics': 'Market Load',
+        'Delhi Hubli Cargo Logistics Pvt. Ltd.': 'Market Load',
     }
 
-    # If billing_party matches a mapping, return it; otherwise map to Market Load
+    # If billing_party matches a mapping, return it; otherwise default to Market Load
     return vendor_mappings.get(billing_party, 'Market Load')
 
 
