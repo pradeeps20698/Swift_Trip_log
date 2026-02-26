@@ -836,8 +836,8 @@ def main():
                 # Add to grand total target (for all categories)
                 grand_total['Target_SQR'] += category_target_sum
 
-                # Add category total (skip for Market Load, Other, and John Deere)
-                if category not in ['Market Load', 'Other', 'John Deere']:
+                # Add category total (only show when more than 1 party in category)
+                if len(cat_df) > 1:
                     final_rows.append({
                         'Client - Wise': f"{category} - Total",
                         'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
@@ -1426,6 +1426,8 @@ def main():
         def local_pilot_fragment():
             # Load KIA Local vehicle numbers dynamically from swift_vehicles
             kia_vehicles = load_vehicles_by_type('TR_KIA_LCL')
+            # Load KIA AP Passing vehicle numbers dynamically from swift_vehicles
+            kia_ap_vehicles = load_vehicles_by_type('TR_KIA_AP PASSING')
 
             # Create filter functions for each category
             def get_toyota_local(data):
@@ -1449,6 +1451,12 @@ def main():
                 if not kia_vehicles:
                     return data.head(0)
                 pattern = '|'.join([v.replace(' ', '.*') for v in kia_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+
+            def get_kia_ap_passing(data):
+                if not kia_ap_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in kia_ap_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_gujarat_local(data):
@@ -1480,6 +1488,7 @@ def main():
             haridwar_local = get_haridwar_local(loaded_month_df)
             road_pilot = get_road_pilot(loaded_month_df)
             kia_local = get_kia_local(loaded_month_df)
+            kia_ap_passing = get_kia_ap_passing(loaded_month_df)
             gujarat_local = get_gujarat_local(loaded_month_df)
             nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
 
@@ -1490,6 +1499,7 @@ def main():
                 {'Category': 'Haridwar Local', 'Trips': len(haridwar_local), 'Cars': int(haridwar_local['CarQty'].sum()), 'Freight': haridwar_local['Freight'].sum()},
                 {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
                 {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
+                {'Category': 'Kia AP Passing', 'Trips': len(kia_ap_passing), 'Cars': int(kia_ap_passing['CarQty'].sum()), 'Freight': kia_ap_passing['Freight'].sum()},
                 {'Category': 'Gujarat Local', 'Trips': len(gujarat_local), 'Cars': int(gujarat_local['CarQty'].sum()), 'Freight': gujarat_local['Freight'].sum()},
                 {'Category': 'NSK/Ckn-north dedicated', 'Trips': len(nsk_ckn_local), 'Cars': int(nsk_ckn_local['CarQty'].sum()), 'Freight': nsk_ckn_local['Freight'].sum()},
             ]
@@ -1498,13 +1508,13 @@ def main():
             st.markdown("#### Summary")
             summary_html = """
             <style>
-                .summary-local { width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 20px; border: 2px solid #3b82f6; border-radius: 8px; overflow: hidden; }
-                .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }
-                .summary-local td { padding: 10px; border: 1px solid #3b82f6; color: white; text-align: center; }
-                .summary-local tr:nth-child(even) { background-color: #1a1f2e; }
-                .summary-local tr:nth-child(odd) { background-color: #0e1117; }
-                .summary-local .total-row { background-color: #1e40af !important; font-weight: bold; }
-                .summary-local .total-row td { border: 1px solid #3b82f6; }
+                .summary-local { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; margin-bottom: 20px; }
+                .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #64748b; }
+                .summary-local td { padding: 10px; border: 1px solid #64748b; color: white; text-align: center; }
+                .summary-local tr:nth-child(even) { background-color: #1e293b; }
+                .summary-local tr:nth-child(odd) { background-color: #0f172a; }
+                .summary-local .total-row { background-color: #1e3a5f !important; font-weight: bold; }
+                .summary-local .total-row td { border: 1px solid #64748b; }
             </style>
             <table class="summary-local">
                 <thead>
@@ -1542,13 +1552,13 @@ def main():
                 </tbody>
             </table>
             """
-            components.html(summary_html, height=380)
+            components.html(summary_html, height=450)
 
             # Filter dropdown
             st.markdown("#### Details by Category")
             col_filter, col_empty = st.columns([1, 3])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Gujarat Local', 'NSK/Ckn-north dedicated']
+                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -1562,6 +1572,8 @@ def main():
                 filtered_df = road_pilot
             elif selected_category == 'Kia Local':
                 filtered_df = kia_local
+            elif selected_category == 'Kia AP Passing':
+                filtered_df = kia_ap_passing
             elif selected_category == 'Gujarat Local':
                 filtered_df = gujarat_local
             else:
@@ -1574,13 +1586,13 @@ def main():
                 # Build details table
                 details_html = """
                 <style>
-                    .details-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                    .details-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #3b82f6; }
-                    .details-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; }
-                    .details-table tr:nth-child(even) { background-color: #1a1f2e; }
-                    .details-table tr:nth-child(odd) { background-color: #0e1117; }
+                    .details-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+                    .details-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: left; border: 1px solid #64748b; position: sticky; top: 0; z-index: 1; }
+                    .details-table td { padding: 8px 10px; border: 1px solid #64748b; color: white; }
+                    .details-table tr:nth-child(even) { background-color: #1e293b; }
+                    .details-table tr:nth-child(odd) { background-color: #0f172a; }
                     .details-table tr:hover { background-color: #2d3748; }
-                    .details-table .total-row { background-color: #1e40af !important; font-weight: bold; }
+                    .details-table .total-row { background-color: #1e3a5f !important; font-weight: bold; }
                 </style>
                 <div style="max-height: 400px; overflow-y: auto;">
                 <table class="details-table">
@@ -2062,15 +2074,27 @@ def main():
             try:
                 conn = get_db_connection()
                 if conn is not None:
-                    # Load cn_data for matching
+                    # Load cn_data for matching (Method 1: cn_date + vehicle_no)
                     cn_query = """
                         SELECT DISTINCT cn_date, vehicle_no
                         FROM cn_data
                         WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
                     """
                     cn_records = pd.read_sql_query(cn_query, conn)
+
+                    # Load cn_data for Own Vehicle matching (Method 2: route + vehicle_no where tl_no is blank)
+                    own_vehicle_query = """
+                        SELECT DISTINCT route, vehicle_no
+                        FROM cn_data
+                        WHERE (tl_no IS NULL OR tl_no = '')
+                          AND vehicle_type = 'Own Vehicle'
+                          AND route IS NOT NULL AND route != ''
+                          AND vehicle_no IS NOT NULL AND vehicle_no != ''
+                    """
+                    own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
                     conn.close()
 
+                    # Method 1: Match by cn_date + vehicle_no
                     if not cn_records.empty:
                         cn_records['cn_date'] = pd.to_datetime(cn_records['cn_date'], errors='coerce').dt.date
                         cn_records['vehicle_no'] = cn_records['vehicle_no'].str.upper().str.strip()
@@ -2086,6 +2110,23 @@ def main():
 
                         # Exclude trips that have matching CN records
                         pending_cn_df = pending_cn_df[~pending_cn_df['lookup_key'].isin(cn_keys)]
+
+                    # Method 2: Match Own Vehicle by route + vehicle_no (for records where tl_no is blank)
+                    if not own_vehicle_records.empty and len(pending_cn_df) > 0:
+                        own_vehicle_records['route'] = own_vehicle_records['route'].str.upper().str.strip()
+                        own_vehicle_records['vehicle_no'] = own_vehicle_records['vehicle_no'].str.upper().str.strip()
+
+                        # Create lookup key for own vehicle cn_data (route + vehicle_no)
+                        own_vehicle_records['route_vehicle_key'] = own_vehicle_records['route'] + '_' + own_vehicle_records['vehicle_no']
+                        own_vehicle_keys = set(own_vehicle_records['route_vehicle_key'].tolist())
+
+                        # Create lookup key for pending trips (Route + VehicleNo)
+                        pending_cn_df['RouteClean'] = pending_cn_df['Route'].str.upper().str.strip()
+                        pending_cn_df['VehicleNoClean'] = pending_cn_df['VehicleNo'].str.upper().str.strip()
+                        pending_cn_df['route_vehicle_key'] = pending_cn_df['RouteClean'] + '_' + pending_cn_df['VehicleNoClean']
+
+                        # Exclude trips that match Own Vehicle CN records by route + vehicle_no
+                        pending_cn_df = pending_cn_df[~pending_cn_df['route_vehicle_key'].isin(own_vehicle_keys)]
             except Exception as e:
                 st.warning(f"Could not cross-check with cn_data: {e}")
 
@@ -2276,28 +2317,27 @@ def main():
                         """, unsafe_allow_html=True)
 
                     with col_right:
-                        # Build HTML table
+                        # Build HTML table with sticky header and first column
                         unbilled_html = """
-                        <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 2px solid #64748b;">
+                        <div style="overflow: auto; max-width: 100%; max-height: 550px;">
+                        <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border: 1px solid #64748b;">
                         <thead>
                             <tr style="background: #1e3a5f; color: white;">
-                                <th style="padding: 12px; text-align: left; border: 2px solid #64748b; min-width: 280px;">Billing Party</th>
+                                <th rowspan="2" style="padding: 12px; text-align: left; border: 1px solid #64748b; min-width: 280px; vertical-align: middle; position: sticky; left: 0; top: 0; z-index: 3; background: #1e3a5f;">Billing Party</th>
                         """
 
                         for month in pivot_cn.columns:
-                            unbilled_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 2px solid #64748b;">{month}</th>'
+                            unbilled_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 1px solid #64748b; position: sticky; top: 0; z-index: 2; background: #1e3a5f;">{month}</th>'
 
                         unbilled_html += """
                             </tr>
                             <tr style="background: #1e3a5f; color: #e0f2fe;">
-                                <th style="padding: 8px; border: 2px solid #64748b;"></th>
                         """
 
                         for month in pivot_cn.columns:
-                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">No. of CN</th>'
-                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">Qty</th>'
-                            unbilled_html += '<th style="padding: 8px; text-align: right; border: 2px solid #64748b;">Unbilled Amt</th>'
+                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">No. of CN</th>'
+                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">Qty</th>'
+                            unbilled_html += '<th style="padding: 8px; text-align: right; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">Unbilled Amt</th>'
 
                         unbilled_html += "</tr></thead><tbody>"
 
@@ -2323,7 +2363,7 @@ def main():
                             for party in sorted(cat_parties):
                                 bg_color = '#1e293b' if row_idx % 2 == 0 else '#0f172a'
                                 unbilled_html += f'<tr style="background: {bg_color}; color: white;">'
-                                unbilled_html += f'<td style="padding: 8px; border: 2px solid #64748b;">{party}</td>'
+                                unbilled_html += f'<td style="padding: 8px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: {bg_color};">{party}</td>'
 
                                 for month in pivot_cn.columns:
                                     cn_count = int(pivot_cn.loc[party, month])
@@ -2332,9 +2372,9 @@ def main():
                                     cat_cn[month] += cn_count
                                     cat_qty[month] += qty_count
                                     cat_amount[month] += amount
-                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 8px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 8px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
 
                                 unbilled_html += "</tr>"
                                 row_idx += 1
@@ -2348,23 +2388,23 @@ def main():
                             # Category total row (gold) - only show if more than 1 party
                             if len(cat_parties) > 1:
                                 unbilled_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
-                                unbilled_html += f'<td style="padding: 10px; border: 2px solid #64748b;">{category} - Total</td>'
+                                unbilled_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
 
                                 for month in pivot_cn.columns:
-                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 10px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 10px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
 
                                 unbilled_html += "</tr>"
 
                         # Grand total row (dark blue)
                         unbilled_html += '<tr style="background: #1e3a5f; color: white; font-weight: bold;">'
-                        unbilled_html += '<td style="padding: 12px; border: 2px solid #64748b;">Grand Total</td>'
+                        unbilled_html += '<td style="padding: 12px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #1e3a5f;">Grand Total</td>'
 
                         for month in pivot_cn.columns:
-                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_cn[month]}</td>'
-                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_qty[month]}</td>'
-                            unbilled_html += f'<td style="padding: 12px; text-align: right; border: 2px solid #64748b;">₹{grand_amount[month]:,.0f}</td>'
+                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_cn[month]}</td>'
+                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_qty[month]}</td>'
+                            unbilled_html += f'<td style="padding: 12px; text-align: right; border: 1px solid #64748b;">₹{grand_amount[month]:,.0f}</td>'
 
                         unbilled_html += "</tr></tbody></table></div>"
 
@@ -2484,28 +2524,27 @@ def main():
                         """, unsafe_allow_html=True)
 
                     with col_right2:
-                        # Build HTML table
+                        # Build HTML table with sticky header and first column
                         pending_pod_html = """
-                        <div style="overflow-x: auto;">
-                        <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 2px solid #64748b;">
+                        <div style="overflow: auto; max-width: 100%; max-height: 550px;">
+                        <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border: 1px solid #64748b;">
                         <thead>
                             <tr style="background: #7f1d1d; color: white;">
-                                <th style="padding: 12px; text-align: left; border: 2px solid #64748b; min-width: 280px;">Billing Party</th>
+                                <th rowspan="2" style="padding: 12px; text-align: left; border: 1px solid #64748b; min-width: 280px; vertical-align: middle; position: sticky; left: 0; top: 0; z-index: 3; background: #7f1d1d;">Billing Party</th>
                         """
 
                         for month in pivot_cn2.columns:
-                            pending_pod_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 2px solid #64748b;">{month}</th>'
+                            pending_pod_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 1px solid #64748b; position: sticky; top: 0; z-index: 2; background: #7f1d1d;">{month}</th>'
 
                         pending_pod_html += """
                             </tr>
                             <tr style="background: #7f1d1d; color: #fecaca;">
-                                <th style="padding: 8px; border: 2px solid #64748b;"></th>
                         """
 
                         for month in pivot_cn2.columns:
-                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">No. of CN</th>'
-                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">Qty</th>'
-                            pending_pod_html += '<th style="padding: 8px; text-align: right; border: 2px solid #64748b;">Pending Amt</th>'
+                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">No. of CN</th>'
+                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">Qty</th>'
+                            pending_pod_html += '<th style="padding: 8px; text-align: right; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">Pending Amt</th>'
 
                         pending_pod_html += "</tr></thead><tbody>"
 
@@ -2531,7 +2570,7 @@ def main():
                             for party in sorted(cat_parties):
                                 bg_color = '#1e293b' if row_idx % 2 == 0 else '#0f172a'
                                 pending_pod_html += f'<tr style="background: {bg_color}; color: white;">'
-                                pending_pod_html += f'<td style="padding: 8px; border: 2px solid #64748b;">{party}</td>'
+                                pending_pod_html += f'<td style="padding: 8px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: {bg_color};">{party}</td>'
 
                                 for month in pivot_cn2.columns:
                                     cn_count = int(pivot_cn2.loc[party, month])
@@ -2540,9 +2579,9 @@ def main():
                                     cat_cn[month] += cn_count
                                     cat_qty[month] += qty_count
                                     cat_amount[month] += amount
-                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 8px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 8px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
 
                                 pending_pod_html += "</tr>"
                                 row_idx += 1
@@ -2556,23 +2595,23 @@ def main():
                             # Category total row (gold) - only show if more than 1 party
                             if len(cat_parties) > 1:
                                 pending_pod_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
-                                pending_pod_html += f'<td style="padding: 10px; border: 2px solid #64748b;">{category} - Total</td>'
+                                pending_pod_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
 
                                 for month in pivot_cn2.columns:
-                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 10px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 10px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
 
                                 pending_pod_html += "</tr>"
 
                         # Grand total row (dark red)
                         pending_pod_html += '<tr style="background: #7f1d1d; color: white; font-weight: bold;">'
-                        pending_pod_html += '<td style="padding: 12px; border: 2px solid #64748b;">Grand Total</td>'
+                        pending_pod_html += '<td style="padding: 12px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #7f1d1d;">Grand Total</td>'
 
                         for month in pivot_cn2.columns:
-                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_cn2[month]}</td>'
-                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_qty2[month]}</td>'
-                            pending_pod_html += f'<td style="padding: 12px; text-align: right; border: 2px solid #64748b;">₹{grand_amount2[month]:,.0f}</td>'
+                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_cn2[month]}</td>'
+                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_qty2[month]}</td>'
+                            pending_pod_html += f'<td style="padding: 12px; text-align: right; border: 1px solid #64748b;">₹{grand_amount2[month]:,.0f}</td>'
 
                         pending_pod_html += "</tr></tbody></table></div>"
 
