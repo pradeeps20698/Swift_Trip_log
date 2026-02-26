@@ -2208,6 +2208,7 @@ def main():
                            TO_CHAR(cn_date, 'YYYY-MM') as month,
                            TO_CHAR(cn_date, 'Mon''YY') as month_display,
                            COUNT(cn_no) as cn_count,
+                           SUM(qty) as qty_total,
                            SUM(basic_freight) as unbilled_amount
                     FROM cn_data
                     WHERE (bill_no IS NULL OR bill_no = '')
@@ -2229,10 +2230,12 @@ def main():
 
                     # Pivot tables
                     pivot_cn = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='cn_count', aggfunc='sum', fill_value=0)
+                    pivot_qty = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='qty_total', aggfunc='sum', fill_value=0)
                     pivot_amount = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='unbilled_amount', aggfunc='sum', fill_value=0)
 
                     # Reorder columns
                     pivot_cn = pivot_cn.reindex(columns=[m for m in month_order if m in pivot_cn.columns])
+                    pivot_qty = pivot_qty.reindex(columns=[m for m in month_order if m in pivot_qty.columns])
                     pivot_amount = pivot_amount.reindex(columns=[m for m in month_order if m in pivot_amount.columns])
 
                     # Add category to pivot index
@@ -2243,6 +2246,7 @@ def main():
 
                     # Calculate totals for summary boxes
                     total_cn_count = int(unbilled_df['cn_count'].sum())
+                    total_qty = int(unbilled_df['qty_total'].sum())
                     total_unbilled_amount = unbilled_df['unbilled_amount'].sum()
 
                     # Layout: Summary on left, Table on right
@@ -2254,6 +2258,13 @@ def main():
                         <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
                             <div style="color: #dbeafe; font-size: 14px;">Total No. of CN</div>
                             <div style="color: white; font-size: 32px; font-weight: bold;">{total_cn_count:,}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
+                            <div style="color: #ede9fe; font-size: 14px;">Total Qty</div>
+                            <div style="color: white; font-size: 32px; font-weight: bold;">{total_qty:,}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -2270,27 +2281,29 @@ def main():
                         <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 2px solid #64748b;">
                         <thead>
-                            <tr style="background: #1e3a5f; color: #60a5fa;">
+                            <tr style="background: #1e3a5f; color: white;">
                                 <th style="padding: 12px; text-align: left; border: 2px solid #64748b; min-width: 280px;">Billing Party</th>
                         """
 
                         for month in pivot_cn.columns:
-                            unbilled_html += f'<th colspan="2" style="padding: 12px; text-align: center; border: 2px solid #64748b;">{month}</th>'
+                            unbilled_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 2px solid #64748b;">{month}</th>'
 
                         unbilled_html += """
                             </tr>
-                            <tr style="background: #1e3a5f; color: #94a3b8;">
+                            <tr style="background: #1e3a5f; color: #e0f2fe;">
                                 <th style="padding: 8px; border: 2px solid #64748b;"></th>
                         """
 
                         for month in pivot_cn.columns:
                             unbilled_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">No. of CN</th>'
+                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">Qty</th>'
                             unbilled_html += '<th style="padding: 8px; text-align: right; border: 2px solid #64748b;">Unbilled Amt</th>'
 
                         unbilled_html += "</tr></thead><tbody>"
 
                         # Grand totals
                         grand_cn = {m: 0 for m in pivot_cn.columns}
+                        grand_qty = {m: 0 for m in pivot_cn.columns}
                         grand_amount = {m: 0 for m in pivot_cn.columns}
 
                         row_idx = 0
@@ -2303,6 +2316,7 @@ def main():
 
                             # Category totals
                             cat_cn = {m: 0 for m in pivot_cn.columns}
+                            cat_qty = {m: 0 for m in pivot_cn.columns}
                             cat_amount = {m: 0 for m in pivot_cn.columns}
 
                             # Add party rows
@@ -2313,10 +2327,13 @@ def main():
 
                                 for month in pivot_cn.columns:
                                     cn_count = int(pivot_cn.loc[party, month])
+                                    qty_count = int(pivot_qty.loc[party, month])
                                     amount = pivot_amount.loc[party, month]
                                     cat_cn[month] += cn_count
+                                    cat_qty[month] += qty_count
                                     cat_amount[month] += amount
                                     unbilled_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
                                     unbilled_html += f'<td style="padding: 8px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
 
                                 unbilled_html += "</tr>"
@@ -2325,6 +2342,7 @@ def main():
                             # Add to grand totals
                             for month in pivot_cn.columns:
                                 grand_cn[month] += cat_cn[month]
+                                grand_qty[month] += cat_qty[month]
                                 grand_amount[month] += cat_amount[month]
 
                             # Category total row (gold) - only show if more than 1 party
@@ -2334,33 +2352,49 @@ def main():
 
                                 for month in pivot_cn.columns:
                                     unbilled_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
+                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
                                     unbilled_html += f'<td style="padding: 10px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
 
                                 unbilled_html += "</tr>"
 
                         # Grand total row (dark blue)
-                        unbilled_html += '<tr style="background: #1e3a5f; color: #60a5fa; font-weight: bold;">'
+                        unbilled_html += '<tr style="background: #1e3a5f; color: white; font-weight: bold;">'
                         unbilled_html += '<td style="padding: 12px; border: 2px solid #64748b;">Grand Total</td>'
 
                         for month in pivot_cn.columns:
                             unbilled_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_cn[month]}</td>'
+                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_qty[month]}</td>'
                             unbilled_html += f'<td style="padding: 12px; text-align: right; border: 2px solid #64748b;">₹{grand_amount[month]:,.0f}</td>'
 
                         unbilled_html += "</tr></tbody></table></div>"
 
                         components.html(unbilled_html, height=600, scrolling=True)
 
-                        # Download button
-                        download_df = unbilled_df.copy()
-                        download_df.columns = ['Billing Party', 'Month', 'Month Display', 'No. of CN', 'Unbilled Amount', 'Category']
-                        unbilled_csv = download_df.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Unbilled CN Data",
-                            data=unbilled_csv,
-                            file_name=f"unbilled_cn_{datetime.now().strftime('%Y%m%d')}.csv",
-                            mime="text/csv",
-                            key="unbilled_cn_download"
-                        )
+                        # Download button - Raw CN data
+                        conn_download = get_db_connection()
+                        if conn_download is not None:
+                            raw_unbilled_query = """
+                                SELECT cn_no, cn_date, billing_party, origin, route,
+                                       vehicle_no, qty, basic_freight, pod_receipt_no
+                                FROM cn_data
+                                WHERE (bill_no IS NULL OR bill_no = '')
+                                  AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
+                                  AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                                ORDER BY cn_date DESC, billing_party
+                            """
+                            raw_unbilled_df = pd.read_sql_query(raw_unbilled_query, conn_download)
+                            conn_download.close()
+
+                            raw_unbilled_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
+                                                       'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No']
+                            unbilled_csv = raw_unbilled_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Unbilled CN Data",
+                                data=unbilled_csv,
+                                file_name=f"unbilled_cn_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv",
+                                key="unbilled_cn_download"
+                            )
                 else:
                     st.success("No unbilled CNs found!")
         except Exception as e:
@@ -2381,6 +2415,7 @@ def main():
                            TO_CHAR(cn_date, 'YYYY-MM') as month,
                            TO_CHAR(cn_date, 'Mon''YY') as month_display,
                            COUNT(cn_no) as cn_count,
+                           SUM(qty) as qty_total,
                            SUM(basic_freight) as unbilled_amount
                     FROM cn_data
                     WHERE (bill_no IS NULL OR bill_no = '')
@@ -2403,10 +2438,12 @@ def main():
 
                     # Pivot tables
                     pivot_cn2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='cn_count', aggfunc='sum', fill_value=0)
+                    pivot_qty2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='qty_total', aggfunc='sum', fill_value=0)
                     pivot_amount2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='unbilled_amount', aggfunc='sum', fill_value=0)
 
                     # Reorder columns
                     pivot_cn2 = pivot_cn2.reindex(columns=[m for m in month_order if m in pivot_cn2.columns])
+                    pivot_qty2 = pivot_qty2.reindex(columns=[m for m in month_order if m in pivot_qty2.columns])
                     pivot_amount2 = pivot_amount2.reindex(columns=[m for m in month_order if m in pivot_amount2.columns])
 
                     # Add category to pivot index
@@ -2417,6 +2454,7 @@ def main():
 
                     # Calculate totals for summary boxes
                     total_cn_count2 = int(pending_pod_df['cn_count'].sum())
+                    total_qty2 = int(pending_pod_df['qty_total'].sum())
                     total_unbilled_amount2 = pending_pod_df['unbilled_amount'].sum()
 
                     # Layout: Summary on left, Table on right
@@ -2428,6 +2466,13 @@ def main():
                         <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
                             <div style="color: #fecaca; font-size: 14px;">Total No. of CN</div>
                             <div style="color: white; font-size: 32px; font-weight: bold;">{total_cn_count2:,}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        st.markdown(f"""
+                        <div style="background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
+                            <div style="color: #f3e8ff; font-size: 14px;">Total Qty</div>
+                            <div style="color: white; font-size: 32px; font-weight: bold;">{total_qty2:,}</div>
                         </div>
                         """, unsafe_allow_html=True)
 
@@ -2444,27 +2489,29 @@ def main():
                         <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; font-size: 13px; border: 2px solid #64748b;">
                         <thead>
-                            <tr style="background: #7f1d1d; color: #fca5a5;">
+                            <tr style="background: #7f1d1d; color: white;">
                                 <th style="padding: 12px; text-align: left; border: 2px solid #64748b; min-width: 280px;">Billing Party</th>
                         """
 
                         for month in pivot_cn2.columns:
-                            pending_pod_html += f'<th colspan="2" style="padding: 12px; text-align: center; border: 2px solid #64748b;">{month}</th>'
+                            pending_pod_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 2px solid #64748b;">{month}</th>'
 
                         pending_pod_html += """
                             </tr>
-                            <tr style="background: #7f1d1d; color: #fca5a5;">
+                            <tr style="background: #7f1d1d; color: #fecaca;">
                                 <th style="padding: 8px; border: 2px solid #64748b;"></th>
                         """
 
                         for month in pivot_cn2.columns:
                             pending_pod_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">No. of CN</th>'
+                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 2px solid #64748b;">Qty</th>'
                             pending_pod_html += '<th style="padding: 8px; text-align: right; border: 2px solid #64748b;">Pending Amt</th>'
 
                         pending_pod_html += "</tr></thead><tbody>"
 
                         # Grand totals
                         grand_cn2 = {m: 0 for m in pivot_cn2.columns}
+                        grand_qty2 = {m: 0 for m in pivot_cn2.columns}
                         grand_amount2 = {m: 0 for m in pivot_cn2.columns}
 
                         row_idx = 0
@@ -2477,6 +2524,7 @@ def main():
 
                             # Category totals
                             cat_cn = {m: 0 for m in pivot_cn2.columns}
+                            cat_qty = {m: 0 for m in pivot_cn2.columns}
                             cat_amount = {m: 0 for m in pivot_cn2.columns}
 
                             # Add party rows
@@ -2487,10 +2535,13 @@ def main():
 
                                 for month in pivot_cn2.columns:
                                     cn_count = int(pivot_cn2.loc[party, month])
+                                    qty_count = int(pivot_qty2.loc[party, month])
                                     amount = pivot_amount2.loc[party, month]
                                     cat_cn[month] += cn_count
+                                    cat_qty[month] += qty_count
                                     cat_amount[month] += amount
                                     pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 2px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
                                     pending_pod_html += f'<td style="padding: 8px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
 
                                 pending_pod_html += "</tr>"
@@ -2499,6 +2550,7 @@ def main():
                             # Add to grand totals
                             for month in pivot_cn2.columns:
                                 grand_cn2[month] += cat_cn[month]
+                                grand_qty2[month] += cat_qty[month]
                                 grand_amount2[month] += cat_amount[month]
 
                             # Category total row (gold) - only show if more than 1 party
@@ -2508,33 +2560,50 @@ def main():
 
                                 for month in pivot_cn2.columns:
                                     pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
+                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 2px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
                                     pending_pod_html += f'<td style="padding: 10px; text-align: right; border: 2px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
 
                                 pending_pod_html += "</tr>"
 
                         # Grand total row (dark red)
-                        pending_pod_html += '<tr style="background: #7f1d1d; color: #fca5a5; font-weight: bold;">'
+                        pending_pod_html += '<tr style="background: #7f1d1d; color: white; font-weight: bold;">'
                         pending_pod_html += '<td style="padding: 12px; border: 2px solid #64748b;">Grand Total</td>'
 
                         for month in pivot_cn2.columns:
                             pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_cn2[month]}</td>'
+                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 2px solid #64748b;">{grand_qty2[month]}</td>'
                             pending_pod_html += f'<td style="padding: 12px; text-align: right; border: 2px solid #64748b;">₹{grand_amount2[month]:,.0f}</td>'
 
                         pending_pod_html += "</tr></tbody></table></div>"
 
                         components.html(pending_pod_html, height=600, scrolling=True)
 
-                        # Download button
-                        download_df2 = pending_pod_df.copy()
-                        download_df2.columns = ['Billing Party', 'Month', 'Month Display', 'No. of CN', 'Pending Amount', 'Category']
-                        pending_pod_csv = download_df2.to_csv(index=False)
-                        st.download_button(
-                            label="📥 Download Pending POD Data",
-                            data=pending_pod_csv,
-                            file_name=f"pending_pod_{datetime.now().strftime('%Y%m%d')}.csv",
-                            mime="text/csv",
-                            key="pending_pod_download"
-                        )
+                        # Download button - Raw CN data
+                        conn_download2 = get_db_connection()
+                        if conn_download2 is not None:
+                            raw_pending_pod_query = f"""
+                                SELECT cn_no, cn_date, billing_party, origin, route,
+                                       vehicle_no, qty, basic_freight, eta
+                                FROM cn_data
+                                WHERE (bill_no IS NULL OR bill_no = '')
+                                  AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
+                                  AND eta < '{d_minus_4}'
+                                  AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                                ORDER BY cn_date DESC, billing_party
+                            """
+                            raw_pending_pod_df = pd.read_sql_query(raw_pending_pod_query, conn_download2)
+                            conn_download2.close()
+
+                            raw_pending_pod_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
+                                                          'Vehicle No', 'Qty', 'Basic Freight', 'ETA']
+                            pending_pod_csv = raw_pending_pod_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Pending POD Data",
+                                data=pending_pod_csv,
+                                file_name=f"pending_pod_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv",
+                                key="pending_pod_download"
+                            )
                 else:
                     st.success("No pending POD CNs found!")
         except Exception as e:
