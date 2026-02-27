@@ -2317,7 +2317,7 @@ def main():
                     # Query cn_data where tl_no is not blank, joined with swift_trip_log for loading_date
                     aging_query = """
                         SELECT
-                            c.origin as branch,
+                            c.branch,
                             c.cn_no,
                             c.cn_date,
                             c.tl_no,
@@ -2365,7 +2365,7 @@ def main():
                         <table class="aging-table">
                             <thead>
                                 <tr>
-                                    <th style="text-align: left;">Branch (Origin)</th>
+                                    <th style="text-align: left;">Branch</th>
                                     <th>CN Count</th>
                                     <th>Min Days</th>
                                     <th>Max Days</th>
