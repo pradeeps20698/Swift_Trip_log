@@ -2307,7 +2307,7 @@ def main():
         # CN Aging Branch-wise Section
         st.markdown("---")
         st.markdown("### CN Aging - Branch Wise")
-        st.caption("*Aging calculated as CN Date - Loading Date (for CNs with Trip Log mapped)*")
+        st.caption("*Days taken to create CN after Trip Log (Last 7 days - Most frequent)*")
 
         @st.fragment(run_every=REFRESH_10_MIN)
         def cn_aging_fragment():
@@ -2315,7 +2315,9 @@ def main():
                 conn = get_db_connection()
                 if conn is not None:
                     # Query cn_data where tl_no is not blank, joined with swift_trip_log for loading_date
-                    aging_query = """
+                    # Filter by last 7 days based on cn_date
+                    last_7_days = (datetime.now() - timedelta(days=7)).date()
+                    aging_query = f"""
                         SELECT
                             c.branch,
                             c.cn_no,
@@ -2329,78 +2331,63 @@ def main():
                           AND c.tl_no != ''
                           AND c.cn_date IS NOT NULL
                           AND t.loading_date IS NOT NULL
+                          AND c.cn_date::date >= '{last_7_days}'
+                          AND c.cn_date::date >= t.loading_date::date
                     """
                     aging_df = pd.read_sql_query(aging_query, conn)
                     conn.close()
 
                     if len(aging_df) > 0:
-                        # Group by branch and calculate statistics
+                        # Group by branch and calculate most common days (mode)
                         branch_aging = aging_df.groupby('branch').agg({
-                            'cn_no': 'count',
-                            'aging_days': ['min', 'max', 'mean']
+                            'aging_days': lambda x: x.value_counts().idxmax() if len(x) > 0 else 0
                         }).reset_index()
-                        branch_aging.columns = ['Branch', 'CN Count', 'Min Days', 'Max Days', 'Avg Days']
-                        branch_aging['Avg Days'] = branch_aging['Avg Days'].round(1)
-                        branch_aging = branch_aging.sort_values('CN Count', ascending=False)
-
-                        # Calculate totals
-                        total_cn = branch_aging['CN Count'].sum()
-                        overall_min = branch_aging['Min Days'].min()
-                        overall_max = branch_aging['Max Days'].max()
-                        overall_avg = aging_df['aging_days'].mean().round(1)
+                        branch_aging.columns = ['Branch', 'Most Common Days']
+                        branch_aging = branch_aging.sort_values('Most Common Days', ascending=False)
 
                         # Build HTML table
                         aging_html = """
                         <style>
-                            .aging-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-                            .aging-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: center; border: 1px solid #3b82f6; }
-                            .aging-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; text-align: center; }
+                            .aging-table { width: 50%; border-collapse: collapse; font-size: 14px; }
+                            .aging-table th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }
+                            .aging-table td { padding: 10px 12px; border: 1px solid #2d3748; color: white; }
                             .aging-table tr:nth-child(even) { background-color: #1a1f2e; }
                             .aging-table tr:nth-child(odd) { background-color: #0e1117; }
-                            .aging-table .total-row { background-color: #1e40af !important; font-weight: bold; }
                             .aging-table .branch-col { text-align: left; font-weight: bold; }
+                            .aging-table .days-col { text-align: center; font-weight: bold; }
                             .aging-table .high-aging { color: #f87171; }
+                            .aging-table .medium-aging { color: #fbbf24; }
                             .aging-table .low-aging { color: #34d399; }
                         </style>
                         <table class="aging-table">
                             <thead>
                                 <tr>
                                     <th style="text-align: left;">Branch</th>
-                                    <th>CN Count</th>
-                                    <th>Min Days</th>
-                                    <th>Max Days</th>
-                                    <th>Avg Days</th>
+                                    <th>Days to Create CN (Most Frequent)</th>
                                 </tr>
                             </thead>
                             <tbody>
                         """
 
                         for _, row in branch_aging.iterrows():
-                            avg_class = 'high-aging' if row['Avg Days'] > 5 else 'low-aging' if row['Avg Days'] <= 2 else ''
+                            days_val = int(row['Most Common Days'])
+                            if days_val > 3:
+                                days_class = 'high-aging'
+                            elif days_val > 1:
+                                days_class = 'medium-aging'
+                            else:
+                                days_class = 'low-aging'
+                            days_display = 'Same Day' if days_val == 0 else f'{days_val} days'
                             aging_html += f"""
                                 <tr>
                                     <td class="branch-col">{row['Branch']}</td>
-                                    <td>{int(row['CN Count'])}</td>
-                                    <td>{int(row['Min Days'])}</td>
-                                    <td>{int(row['Max Days'])}</td>
-                                    <td class="{avg_class}">{row['Avg Days']}</td>
+                                    <td class="days-col {days_class}">{days_display}</td>
                                 </tr>
                             """
 
-                        # Total row
-                        total_avg_class = 'high-aging' if overall_avg > 5 else 'low-aging' if overall_avg <= 2 else ''
-                        aging_html += f"""
-                            <tr class="total-row">
-                                <td class="branch-col">Grand Total</td>
-                                <td>{int(total_cn)}</td>
-                                <td>{int(overall_min)}</td>
-                                <td>{int(overall_max)}</td>
-                                <td class="{total_avg_class}">{overall_avg}</td>
-                            </tr>
-                        </tbody></table>
-                        """
+                        aging_html += "</tbody></table>"
 
-                        components.html(aging_html, height=min(len(branch_aging) * 40 + 80, 500), scrolling=True)
+                        components.html(aging_html, height=min(len(branch_aging) * 45 + 60, 500), scrolling=True)
                     else:
                         st.info("No CN records found with Trip Log mapping.")
                 else:
