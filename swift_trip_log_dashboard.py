@@ -7,6 +7,11 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import os
 
+# Refresh intervals (in seconds)
+REFRESH_10_MIN = 600
+REFRESH_15_MIN = 900
+REFRESH_20_MIN = 1200
+
 # Page configuration
 st.set_page_config(
     page_title="Swift Trip Log Dashboard",
@@ -15,54 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Auto-refresh every 10 minutes (600000 milliseconds) with tab persistence
-components.html(
-    """
-    <script>
-        // Function to get current active tab index
-        function getCurrentTabIndex() {
-            const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-            for (let i = 0; i < tabs.length; i++) {
-                if (tabs[i].getAttribute('aria-selected') === 'true') {
-                    return i;
-                }
-            }
-            return 0;
-        }
-
-        // Function to click a tab by index
-        function clickTab(index) {
-            const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
-            if (tabs[index]) {
-                tabs[index].click();
-            }
-        }
-
-        // On page load, restore the saved tab
-        const savedTab = localStorage.getItem('swift_dashboard_tab');
-        if (savedTab !== null) {
-            setTimeout(function() {
-                clickTab(parseInt(savedTab));
-            }, 500);
-        }
-
-        // Save current tab every second (to capture tab changes)
-        setInterval(function() {
-            const currentTab = getCurrentTabIndex();
-            localStorage.setItem('swift_dashboard_tab', currentTab);
-        }, 1000);
-
-        // Auto-refresh after 10 minutes
-        setTimeout(function(){
-            // Save current tab before refresh
-            const currentTab = getCurrentTabIndex();
-            localStorage.setItem('swift_dashboard_tab', currentTab);
-            window.parent.location.reload();
-        }, 600000);
-    </script>
-    """,
-    height=0
-)
+# No full page auto-refresh - using @st.fragment with run_every for each section
 
 # Custom CSS
 st.markdown("""
@@ -595,117 +553,122 @@ def main():
     if selected_party != 'All':
         month_df = month_df[month_df['DisplayParty'] == selected_party]
 
-    # Month Summary Section (Full Month - Live Data)
-    st.markdown(f"### Month Summary ({selected_month.strftime('%B %Y')})")
+    # Month Summary Section (Full Month - Live Data) - Auto refresh every 10 minutes
+    @st.fragment(run_every=REFRESH_10_MIN)
+    def month_summary_fragment():
+        st.markdown(f"### Month Summary ({selected_month.strftime('%B %Y')})")
 
-    # Calculate Own metrics
-    loaded_trips = len(month_df[(month_df['TripStatus'] != 'Empty') & (month_df['DisplayParty'] != '') & (month_df['DisplayParty'].notna())])
-    empty_trips = len(month_df[(month_df['TripStatus'] == 'Empty') | (month_df['DisplayParty'] == '') | (month_df['DisplayParty'].isna())])
-    own_cars = int(month_df['CarQty'].sum())
-    own_freight = month_df['Freight'].sum()
+        # Calculate Own metrics
+        loaded_trips = len(month_df[(month_df['TripStatus'] != 'Empty') & (month_df['DisplayParty'] != '') & (month_df['DisplayParty'].notna())])
+        empty_trips = len(month_df[(month_df['TripStatus'] == 'Empty') | (month_df['DisplayParty'] == '') | (month_df['DisplayParty'].isna())])
+        own_cars = int(month_df['CarQty'].sum())
+        own_freight = month_df['Freight'].sum()
 
-    # Calculate Vendor metrics for full month
-    vendor_cars = 0
-    vendor_freight = 0.0
-    vendor_trips = 0
-    if not vendor_df.empty:
-        vendor_month_df = vendor_df[
-            (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
-            (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
-        ].copy()
-        if not vendor_month_df.empty:
-            # Apply vendor mapping to filter only mapped vendors
-            vendor_month_df['MappedParty'] = vendor_month_df.apply(
-                lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-            )
-            vendor_mapped = vendor_month_df[vendor_month_df['MappedParty'].notna()]
-            vendor_cars = int(vendor_mapped['CarQty'].sum())
-            vendor_freight = vendor_mapped['Freight'].sum()
-            # Vendor trips = unique combinations of date + vehicle
-            if not vendor_mapped.empty:
-                vendor_mapped['CNDateOnly'] = vendor_mapped['CNDate'].dt.date
-                vendor_trips = vendor_mapped.groupby(['CNDateOnly', 'VehicleNo']).ngroups
+        # Calculate Vendor metrics for full month
+        vendor_cars = 0
+        vendor_freight = 0.0
+        vendor_trips = 0
+        if not vendor_df.empty:
+            vendor_month_df = vendor_df[
+                (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
+                (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
+            ].copy()
+            if not vendor_month_df.empty:
+                # Apply vendor mapping to filter only mapped vendors
+                vendor_month_df['MappedParty'] = vendor_month_df.apply(
+                    lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                )
+                vendor_mapped = vendor_month_df[vendor_month_df['MappedParty'].notna()]
+                vendor_cars = int(vendor_mapped['CarQty'].sum())
+                vendor_freight = vendor_mapped['Freight'].sum()
+                # Vendor trips = unique combinations of date + vehicle
+                if not vendor_mapped.empty:
+                    vendor_mapped['CNDateOnly'] = vendor_mapped['CNDate'].dt.date
+                    vendor_trips = vendor_mapped.groupby(['CNDateOnly', 'VehicleNo']).ngroups
 
-    # Total (Own + Vendor)
-    total_cars = own_cars + vendor_cars
-    total_trips = loaded_trips + vendor_trips
-    total_freight = own_freight + vendor_freight
-    total_freight_lakhs = total_freight / 100000
+        # Total (Own + Vendor)
+        total_cars = own_cars + vendor_cars
+        total_trips = loaded_trips + vendor_trips
+        total_freight = own_freight + vendor_freight
+        total_freight_lakhs = total_freight / 100000
 
-    # Display metrics in cards
-    col1, col2, col3, col4 = st.columns(4)
+        # Display metrics in cards
+        col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
-        st.markdown(f"""
-        <div class="metric-card-blue">
-            <div class="metric-label">Loaded Trips</div>
-            <div class="metric-value">{total_trips:,}</div>
-            <div style="display: flex; gap: 8px; margin-top: 10px;">
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
-                    <div style="color: white; font-size: 16px; font-weight: bold;">{loaded_trips:,}</div>
-                </div>
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
-                    <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">{vendor_trips:,}</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card-blue">
-            <div class="metric-label">Empty Trips</div>
-            <div class="metric-value">{empty_trips:,}</div>
-            <div style="display: flex; gap: 8px; margin-top: 10px;">
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
-                    <div style="color: white; font-size: 16px; font-weight: bold;">{empty_trips:,}</div>
-                </div>
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
-                    <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">0</div>
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card-blue">
+                <div class="metric-label">Loaded Trips</div>
+                <div class="metric-value">{total_trips:,}</div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #60a5fa; font-size: 11px;">Own</div>
+                        <div style="color: white; font-size: 16px; font-weight: bold;">{loaded_trips:,}</div>
+                    </div>
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
+                        <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">{vendor_trips:,}</div>
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-    with col3:
-        st.markdown(f"""
-        <div class="metric-card-blue">
-            <div class="metric-label">Cars Lifted</div>
-            <div class="metric-value">{total_cars:,}</div>
-            <div style="display: flex; gap: 8px; margin-top: 10px;">
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
-                    <div style="color: white; font-size: 16px; font-weight: bold;">{own_cars:,}</div>
-                </div>
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
-                    <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">{vendor_cars:,}</div>
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card-blue">
+                <div class="metric-label">Empty Trips</div>
+                <div class="metric-value">{empty_trips:,}</div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #60a5fa; font-size: 11px;">Own</div>
+                        <div style="color: white; font-size: 16px; font-weight: bold;">{empty_trips:,}</div>
+                    </div>
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
+                        <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">0</div>
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-    with col4:
-        st.markdown(f"""
-        <div class="metric-card-red">
-            <div class="metric-label">Total Freight</div>
-            <div class="metric-value">₹{total_freight_lakhs:.2f}L</div>
-            <div style="display: flex; gap: 8px; margin-top: 10px;">
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #60a5fa; font-size: 11px;">Own</div>
-                    <div style="color: white; font-size: 16px; font-weight: bold;">₹{own_freight/100000:.2f}L</div>
-                </div>
-                <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
-                    <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
-                    <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">₹{vendor_freight/100000:.2f}L</div>
+        with col3:
+            st.markdown(f"""
+            <div class="metric-card-blue">
+                <div class="metric-label">Cars Lifted</div>
+                <div class="metric-value">{total_cars:,}</div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #60a5fa; font-size: 11px;">Own</div>
+                        <div style="color: white; font-size: 16px; font-weight: bold;">{own_cars:,}</div>
+                    </div>
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
+                        <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">{vendor_cars:,}</div>
+                    </div>
                 </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+
+        with col4:
+            st.markdown(f"""
+            <div class="metric-card-red">
+                <div class="metric-label">Total Freight</div>
+                <div class="metric-value">₹{total_freight_lakhs:.2f}L</div>
+                <div style="display: flex; gap: 8px; margin-top: 10px;">
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #60a5fa; font-size: 11px;">Own</div>
+                        <div style="color: white; font-size: 16px; font-weight: bold;">₹{own_freight/100000:.2f}L</div>
+                    </div>
+                    <div style="flex: 1; background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; text-align: center;">
+                        <div style="color: #fbbf24; font-size: 11px;">Vendor</div>
+                        <div style="color: #f59e0b; font-size: 16px; font-weight: bold;">₹{vendor_freight/100000:.2f}L</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # Call the month summary fragment
+    month_summary_fragment()
 
     # Initialize session state for tab selection
     if 'selected_tab' not in st.session_state:
@@ -715,391 +678,395 @@ def main():
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "📋 Pending CN - Triplogs", "📄 Unbilled CN"])
 
     with tab1:
-        month_display = selected_month.strftime("%b'%y")
-        st.markdown(f"**Selected Month:** {month_display}")
-
         # Target vs Actual - Client-Wise Summary
         st.markdown("### Target vs Actual - Client-Wise Summary")
 
-        # Date selectors
-        col1, col2, col3, col4 = st.columns(4)
+        @st.fragment(run_every=REFRESH_10_MIN)
+        def target_vs_actual_fragment():
+            month_display = selected_month.strftime("%b'%y")
+            st.markdown(f"**Selected Month:** {month_display}")
 
-        with col1:
-            select_month_start = st.date_input("Select Month", month_start.date())
-        with col2:
-            # Default to D-1 (yesterday)
-            yesterday = (datetime.now() - timedelta(days=1)).date()
-            till_date = st.date_input("Till Date", min(yesterday, month_end.date()))
-        with col3:
-            compare_month = st.date_input("Compare With Month", datetime(2025, 12, 1).date())
-        with col4:
-            compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
+            # Date selectors
+            col1, col2, col3, col4 = st.columns(4)
 
-        # Filter data for current period (using date only for accurate comparison)
-        current_df = df[
-            (df['LoadingDateOnly'] >= select_month_start) &
-            (df['LoadingDateOnly'] <= till_date) &
-            (df['DisplayParty'] != '') &
-            (df['DisplayParty'].notna())
-        ]
+            with col1:
+                select_month_start = st.date_input("Select Month", month_start.date())
+            with col2:
+                # Default to D-1 (yesterday)
+                yesterday = (datetime.now() - timedelta(days=1)).date()
+                till_date = st.date_input("Till Date", min(yesterday, month_end.date()))
+            with col3:
+                compare_month = st.date_input("Compare With Month", datetime(2025, 12, 1).date())
+            with col4:
+                compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
 
-        # Filter data for comparison period
-        compare_df = df[
-            (df['LoadingDateOnly'] >= compare_month) &
-            (df['LoadingDateOnly'] <= compare_till_date) &
-            (df['DisplayParty'] != '') &
-            (df['DisplayParty'].notna())
-        ]
+            # Filter data for current period (using date only for accurate comparison)
+            current_df = df[
+                (df['LoadingDateOnly'] >= select_month_start) &
+                (df['LoadingDateOnly'] <= till_date) &
+                (df['DisplayParty'] != '') &
+                (df['DisplayParty'].notna())
+            ]
 
-        till_date_display = till_date.strftime("%dth %b'%y")
-        st.markdown(f"#### Till {till_date_display} 📊")
+            # Filter data for comparison period
+            compare_df = df[
+                (df['LoadingDateOnly'] >= compare_month) &
+                (df['LoadingDateOnly'] <= compare_till_date) &
+                (df['DisplayParty'] != '') &
+                (df['DisplayParty'].notna())
+            ]
 
-        # Create client-wise summary (Own data from swift_trip_log)
-        summary = current_df.groupby('DisplayParty').agg({
-            'TLHSNo': 'count',
-            'CarQty': 'sum',
-            'Freight': 'sum'
-        }).reset_index()
-        summary.columns = ['Party', 'Trips', 'Own_Cars', 'Own_Freight']
-        summary['category'] = summary['Party'].apply(get_client_category)
+            till_date_display = till_date.strftime("%dth %b'%y")
+            st.markdown(f"#### Till {till_date_display} 📊")
 
-        # Process vendor data from cn_data
-        summary['Vendor_Cars'] = 0
-        summary['Vendor_Freight'] = 0.0
-
-        if not vendor_df.empty:
-            # Filter vendor data for current period (convert to Timestamp for consistent comparison)
-            vendor_current = vendor_df[
-                (vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
-                (vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
-            ].copy()
-
-            if not vendor_current.empty:
-                # Map vendor billing_party to client display name (with origin for Mahindra)
-                vendor_current['MappedParty'] = vendor_current.apply(
-                    lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                )
-
-                # Filter only mapped vendors and group
-                vendor_mapped = vendor_current[vendor_current['MappedParty'].notna()]
-                if not vendor_mapped.empty:
-                    vendor_summary = vendor_mapped.groupby('MappedParty').agg({
-                        'CarQty': 'sum',
-                        'Freight': 'sum'
-                    }).reset_index()
-                    vendor_summary.columns = ['Party', 'Vendor_Cars', 'Vendor_Freight']
-
-                    # Merge vendor data with summary (outer join to include vendor-only parties)
-                    summary = summary.merge(vendor_summary, on='Party', how='outer', suffixes=('', '_v'))
-
-                    # Fill missing values for vendor-only parties
-                    summary['Trips'] = summary['Trips'].fillna(0)
-                    summary['Own_Cars'] = summary['Own_Cars'].fillna(0)
-                    summary['Own_Freight'] = summary['Own_Freight'].fillna(0)
-
-                    # Merge vendor columns
-                    summary['Vendor_Cars'] = summary['Vendor_Cars_v'].fillna(summary['Vendor_Cars']).fillna(0)
-                    summary['Vendor_Freight'] = summary['Vendor_Freight_v'].fillna(summary['Vendor_Freight']).fillna(0)
-                    summary = summary.drop(columns=['Vendor_Cars_v', 'Vendor_Freight_v'], errors='ignore')
-
-                    # Add category for new vendor-only parties
-                    summary['category'] = summary.apply(
-                        lambda row: get_client_category(row['Party']) if pd.isna(row.get('category')) else row['category'],
-                        axis=1
-                    )
-
-        # Calculate totals
-        summary['Total_Cars'] = summary['Own_Cars'] + summary['Vendor_Cars']
-        summary['Total_Freight'] = summary['Own_Freight'] + summary['Vendor_Freight']
-
-        # Add comparison data
-        if not compare_df.empty:
-            compare_summary = compare_df.groupby('DisplayParty').agg({
+            # Create client-wise summary (Own data from swift_trip_log)
+            summary = current_df.groupby('DisplayParty').agg({
+                'TLHSNo': 'count',
                 'CarQty': 'sum',
                 'Freight': 'sum'
             }).reset_index()
-            compare_summary.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
-            summary = summary.merge(compare_summary, on='Party', how='left')
-            summary['Compare_Cars'] = summary['Compare_Cars'].fillna(0)
-            summary['Compare_Freight'] = summary['Compare_Freight'].fillna(0)
-        else:
-            summary['Compare_Cars'] = 0
-            summary['Compare_Freight'] = 0
+            summary.columns = ['Party', 'Trips', 'Own_Cars', 'Own_Freight']
+            summary['category'] = summary['Party'].apply(get_client_category)
 
-        # Build final table with category totals
-        category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
-        category_colors = {
-            'Honda': '#ff6b35',
-            'M & M': '#2e8b57',
-            'Toyota': '#4169e1',
-            'Skoda': '#8b5cf6',
-            'Glovis': '#f59e0b',
-            'Tata': '#06b6d4',
-            'John Deere': '#22c55e',
-            'Market Load': '#ec4899',
-            'Other': '#6b7280',
-            'Grand': '#1e40af'
-        }
+            # Process vendor data from cn_data
+            summary['Vendor_Cars'] = 0
+            summary['Vendor_Freight'] = 0.0
 
-        final_rows = []
-        grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0, 'Target_SQR': 0}
+            if not vendor_df.empty:
+                # Filter vendor data for current period (convert to Timestamp for consistent comparison)
+                vendor_current = vendor_df[
+                    (vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
+                    (vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
+                ].copy()
 
-        for category in category_order:
-            cat_df = summary[summary['category'] == category].copy()
-            if len(cat_df) > 0:
-                # Calculate category target sum from individual rows
-                category_target_sum = 0
+                if not vendor_current.empty:
+                    # Map vendor billing_party to client display name (with origin for Mahindra)
+                    vendor_current['MappedParty'] = vendor_current.apply(
+                        lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                    )
 
-                # Add individual rows
-                for _, row in cat_df.iterrows():
-                    target_sqr = targets.get(row['Party'], 0)
-                    if target_sqr:
-                        category_target_sum += target_sqr
-                    final_rows.append({
-                        'Client - Wise': row['Party'],
-                        'Target SQR': target_sqr if target_sqr else '',
-                        'Own': int(row['Own_Cars']),
-                        'Vendor': int(row['Vendor_Cars']),
-                        'Total': int(row['Total_Cars']),
-                        'Own_F': row['Own_Freight'],
-                        'Vendor_F': row['Vendor_Freight'],
-                        'Total_F': row['Total_Freight'],
-                        'Cars_Comp': int(row['Compare_Cars']),
-                        'Freight_Comp': row['Compare_Freight'],
-                        'is_total': False,
-                        'category': category
-                    })
+                    # Filter only mapped vendors and group
+                    vendor_mapped = vendor_current[vendor_current['MappedParty'].notna()]
+                    if not vendor_mapped.empty:
+                        vendor_summary = vendor_mapped.groupby('MappedParty').agg({
+                            'CarQty': 'sum',
+                            'Freight': 'sum'
+                        }).reset_index()
+                        vendor_summary.columns = ['Party', 'Vendor_Cars', 'Vendor_Freight']
 
-                # Add to grand total target (for all categories)
-                grand_total['Target_SQR'] += category_target_sum
+                        # Merge vendor data with summary (outer join to include vendor-only parties)
+                        summary = summary.merge(vendor_summary, on='Party', how='outer', suffixes=('', '_v'))
 
-                # Add category total (only show when more than 1 party in category)
-                if len(cat_df) > 1:
-                    final_rows.append({
-                        'Client - Wise': f"{category} - Total",
-                        'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
-                        'Own': int(cat_df['Own_Cars'].sum()),
-                        'Vendor': int(cat_df['Vendor_Cars'].sum()),
-                        'Total': int(cat_df['Total_Cars'].sum()),
-                        'Own_F': cat_df['Own_Freight'].sum(),
-                        'Vendor_F': cat_df['Vendor_Freight'].sum(),
-                        'Total_F': cat_df['Total_Freight'].sum(),
-                        'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
-                        'Freight_Comp': cat_df['Compare_Freight'].sum(),
-                        'is_total': True,
-                        'category': category
-                    })
+                        # Fill missing values for vendor-only parties
+                        summary['Trips'] = summary['Trips'].fillna(0)
+                        summary['Own_Cars'] = summary['Own_Cars'].fillna(0)
+                        summary['Own_Freight'] = summary['Own_Freight'].fillna(0)
 
-                # Accumulate grand total
-                grand_total['Own'] += int(cat_df['Own_Cars'].sum())
-                grand_total['Vendor'] += int(cat_df['Vendor_Cars'].sum())
-                grand_total['Total'] += int(cat_df['Total_Cars'].sum())
-                grand_total['Own_F'] += cat_df['Own_Freight'].sum()
-                grand_total['Vendor_F'] += cat_df['Vendor_Freight'].sum()
-                grand_total['Total_F'] += cat_df['Total_Freight'].sum()
-                grand_total['Cars_Comp'] += int(cat_df['Compare_Cars'].sum())
-                grand_total['Freight_Comp'] += cat_df['Compare_Freight'].sum()
+                        # Merge vendor columns
+                        summary['Vendor_Cars'] = summary['Vendor_Cars_v'].fillna(summary['Vendor_Cars']).fillna(0)
+                        summary['Vendor_Freight'] = summary['Vendor_Freight_v'].fillna(summary['Vendor_Freight']).fillna(0)
+                        summary = summary.drop(columns=['Vendor_Cars_v', 'Vendor_Freight_v'], errors='ignore')
 
-        # Add Grand Total row
-        final_rows.append({
-            'Client - Wise': 'Grand Total',
-            'Target SQR': int(grand_total['Target_SQR']) if grand_total['Target_SQR'] > 0 else '',
-            'Own': grand_total['Own'],
-            'Vendor': grand_total['Vendor'],
-            'Total': grand_total['Total'],
-            'Own_F': grand_total['Own_F'],
-            'Vendor_F': grand_total['Vendor_F'],
-            'Total_F': grand_total['Total_F'],
-            'Cars_Comp': grand_total['Cars_Comp'],
-            'Freight_Comp': grand_total['Freight_Comp'],
-            'is_total': True,
-            'category': 'Grand'
-        })
+                        # Add category for new vendor-only parties
+                        summary['category'] = summary.apply(
+                            lambda row: get_client_category(row['Party']) if pd.isna(row.get('category')) else row['category'],
+                            axis=1
+                        )
 
-        # Create display dataframe with row numbers
-        display_data = []
-        for idx, row in enumerate(final_rows, 1):
-            display_data.append({
-                '': idx,
-                'Client - Wise': row['Client - Wise'],
-                'Target SQR': row['Target SQR'],
-                'Own': row['Own'],
-                'Vendor': row['Vendor'],
-                'Total': row['Total'],
-                'Own ': f"₹{row['Own_F']/100000:.2f}",
-                'Vendor ': f"₹{row['Vendor_F']/100000:.2f}",
-                'Total ': f"₹{row['Total_F']/100000:.2f}",
-                'Cars': row['Cars_Comp'],
-                'Freight': f"₹{row['Freight_Comp']/100000:.2f}"
+            # Calculate totals
+            summary['Total_Cars'] = summary['Own_Cars'] + summary['Vendor_Cars']
+            summary['Total_Freight'] = summary['Own_Freight'] + summary['Vendor_Freight']
+
+            # Add comparison data
+            if not compare_df.empty:
+                compare_summary = compare_df.groupby('DisplayParty').agg({
+                    'CarQty': 'sum',
+                    'Freight': 'sum'
+                }).reset_index()
+                compare_summary.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
+                summary = summary.merge(compare_summary, on='Party', how='left')
+                summary['Compare_Cars'] = summary['Compare_Cars'].fillna(0)
+                summary['Compare_Freight'] = summary['Compare_Freight'].fillna(0)
+            else:
+                summary['Compare_Cars'] = 0
+                summary['Compare_Freight'] = 0
+
+            # Build final table with category totals
+            category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
+            category_colors = {
+                'Honda': '#ff6b35',
+                'M & M': '#2e8b57',
+                'Toyota': '#4169e1',
+                'Skoda': '#8b5cf6',
+                'Glovis': '#f59e0b',
+                'Tata': '#06b6d4',
+                'John Deere': '#22c55e',
+                'Market Load': '#ec4899',
+                'Other': '#6b7280',
+                'Grand': '#1e40af'
+            }
+
+            final_rows = []
+            grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0, 'Target_SQR': 0}
+
+            for category in category_order:
+                cat_df = summary[summary['category'] == category].copy()
+                if len(cat_df) > 0:
+                    # Calculate category target sum from individual rows
+                    category_target_sum = 0
+
+                    # Add individual rows
+                    for _, row in cat_df.iterrows():
+                        target_sqr = targets.get(row['Party'], 0)
+                        if target_sqr:
+                            category_target_sum += target_sqr
+                        final_rows.append({
+                            'Client - Wise': row['Party'],
+                            'Target SQR': target_sqr if target_sqr else '',
+                            'Own': int(row['Own_Cars']),
+                            'Vendor': int(row['Vendor_Cars']),
+                            'Total': int(row['Total_Cars']),
+                            'Own_F': row['Own_Freight'],
+                            'Vendor_F': row['Vendor_Freight'],
+                            'Total_F': row['Total_Freight'],
+                            'Cars_Comp': int(row['Compare_Cars']),
+                            'Freight_Comp': row['Compare_Freight'],
+                            'is_total': False,
+                            'category': category
+                        })
+
+                    # Add to grand total target (for all categories)
+                    grand_total['Target_SQR'] += category_target_sum
+
+                    # Add category total (only show when more than 1 party in category)
+                    if len(cat_df) > 1:
+                        final_rows.append({
+                            'Client - Wise': f"{category} - Total",
+                            'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
+                            'Own': int(cat_df['Own_Cars'].sum()),
+                            'Vendor': int(cat_df['Vendor_Cars'].sum()),
+                            'Total': int(cat_df['Total_Cars'].sum()),
+                            'Own_F': cat_df['Own_Freight'].sum(),
+                            'Vendor_F': cat_df['Vendor_Freight'].sum(),
+                            'Total_F': cat_df['Total_Freight'].sum(),
+                            'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
+                            'Freight_Comp': cat_df['Compare_Freight'].sum(),
+                            'is_total': True,
+                            'category': category
+                        })
+
+                    # Accumulate grand total
+                    grand_total['Own'] += int(cat_df['Own_Cars'].sum())
+                    grand_total['Vendor'] += int(cat_df['Vendor_Cars'].sum())
+                    grand_total['Total'] += int(cat_df['Total_Cars'].sum())
+                    grand_total['Own_F'] += cat_df['Own_Freight'].sum()
+                    grand_total['Vendor_F'] += cat_df['Vendor_Freight'].sum()
+                    grand_total['Total_F'] += cat_df['Total_Freight'].sum()
+                    grand_total['Cars_Comp'] += int(cat_df['Compare_Cars'].sum())
+                    grand_total['Freight_Comp'] += cat_df['Compare_Freight'].sum()
+
+            # Add Grand Total row
+            final_rows.append({
+                'Client - Wise': 'Grand Total',
+                'Target SQR': int(grand_total['Target_SQR']) if grand_total['Target_SQR'] > 0 else '',
+                'Own': grand_total['Own'],
+                'Vendor': grand_total['Vendor'],
+                'Total': grand_total['Total'],
+                'Own_F': grand_total['Own_F'],
+                'Vendor_F': grand_total['Vendor_F'],
+                'Total_F': grand_total['Total_F'],
+                'Cars_Comp': grand_total['Cars_Comp'],
+                'Freight_Comp': grand_total['Freight_Comp'],
+                'is_total': True,
+                'category': 'Grand'
             })
 
-        display_df = pd.DataFrame(display_data)
+            # Create display dataframe with row numbers
+            display_data = []
+            for idx, row in enumerate(final_rows, 1):
+                display_data.append({
+                    '': idx,
+                    'Client - Wise': row['Client - Wise'],
+                    'Target SQR': row['Target SQR'],
+                    'Own': row['Own'],
+                    'Vendor': row['Vendor'],
+                    'Total': row['Total'],
+                    'Own ': f"₹{row['Own_F']/100000:.2f}",
+                    'Vendor ': f"₹{row['Vendor_F']/100000:.2f}",
+                    'Total ': f"₹{row['Total_F']/100000:.2f}",
+                    'Cars': row['Cars_Comp'],
+                    'Freight': f"₹{row['Freight_Comp']/100000:.2f}"
+                })
 
-        # Build HTML table with proper formatting
-        compare_date = compare_till_date.strftime("%dth %b'%y")
+            display_df = pd.DataFrame(display_data)
 
-        html_table = f"""
-        <style>
-            body {{
-                background-color: #0e1117;
-                color: #ffffff;
-            }}
-            .custom-table {{
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 13px;
-                background-color: #0e1117;
-                color: #ffffff;
-            }}
-            .custom-table th {{
-                padding: 8px 12px;
-                text-align: center;
-                font-weight: bold;
-                color: #ffffff;
-                border: 1px solid #2d3748;
-                border-bottom: 2px solid #4a5568;
-            }}
-            .custom-table td {{
-                padding: 8px 10px;
-                border: 1px solid #2d3748;
-                color: #ffffff;
-            }}
-            .custom-table tr {{
-                border-bottom: 1px solid #4a5568;
-            }}
-            .custom-table tbody tr:hover {{
-                background-color: #1a202c;
-            }}
-            .summary-row {{
-                background-color: #1a365d !important;
-            }}
-            .col-divider {{
-                border-left: 2px solid #3b82f6 !important;
-            }}
-            .col-divider-right {{
-                border-right: 2px solid #3b82f6 !important;
-            }}
-            .header-group {{
-                background-color: #1e3a5f;
-                color: #ffffff;
-            }}
-            .header-sub {{
-                background-color: #16213e;
-                color: #ffffff;
-                font-size: 12px;
-            }}
-            .total-row {{
-                background-color: #d4a017 !important;
-                color: #000000 !important;
-                font-weight: bold;
-            }}
-            .total-row td {{
-                color: #000000 !important;
-            }}
-            .grand-total-row {{
-                background-color: #1e40af !important;
-                color: #ffffff !important;
-                font-weight: bold;
-            }}
-            .grand-total-row td {{
-                color: #ffffff !important;
-            }}
-            .data-row {{
-                color: #ffffff;
-            }}
-            .data-row:hover {{
-                background-color: #2d2d44;
-            }}
-            .text-left {{ text-align: left; }}
-            .text-right {{ text-align: right; }}
-            .text-center {{ text-align: center; }}
-        </style>
-        <div style="overflow-x: auto;">
-        <table class="custom-table">
-            <thead>
-                <tr>
-                    <th class="header-group text-left col-divider-right" style="width: 25%;">Client - Wise</th>
-                    <th class="header-group text-center col-divider-right" style="width: 8%;">Target SOB</th>
-                    <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">No. of Cars</th>
-                    <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">Freight (₹ Lakhs)</th>
-                    <th class="header-group text-center" colspan="2" style="background-color: #0e4a6f;">Comparison (Till {compare_date})</th>
-                </tr>
-                <tr class="header-sub">
-                    <th class="col-divider-right"></th>
-                    <th class="col-divider-right"></th>
-                    <th>Own</th>
-                    <th>Vendor</th>
-                    <th class="col-divider-right">Total</th>
-                    <th>Own</th>
-                    <th>Vendor</th>
-                    <th class="col-divider-right">Total</th>
-                    <th>Cars</th>
-                    <th>Freight</th>
-                </tr>
-            </thead>
-            <tbody>
-        """
+            # Build HTML table with proper formatting
+            compare_date = compare_till_date.strftime("%dth %b'%y")
 
-        for row in final_rows:
-            is_total = row['is_total']
-            is_grand = row['category'] == 'Grand'
-
-            if is_grand:
-                row_class = 'grand-total-row'
-            elif is_total:
-                row_class = 'total-row'
-            else:
-                row_class = 'data-row'
-
-            html_table += f"""
-                <tr class="{row_class}">
-                    <td class="text-left col-divider-right">{row['Client - Wise']}</td>
-                    <td class="text-center col-divider-right">{row['Target SQR']}</td>
-                    <td class="text-center">{row['Own']}</td>
-                    <td class="text-center">{row['Vendor']}</td>
-                    <td class="text-center col-divider-right">{row['Total']}</td>
-                    <td class="text-right">₹{row['Own_F']/100000:.2f}</td>
-                    <td class="text-right">₹{row['Vendor_F']/100000:.2f}</td>
-                    <td class="text-right col-divider-right">₹{row['Total_F']/100000:.2f}</td>
-                    <td class="text-center">{row['Cars_Comp']}</td>
-                    <td class="text-right">₹{row['Freight_Comp']/100000:.2f}</td>
-                </tr>
+            html_table = f"""
+            <style>
+                body {{
+                    background-color: #0e1117;
+                    color: #ffffff;
+                }}
+                .custom-table {{
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 13px;
+                    background-color: #0e1117;
+                    color: #ffffff;
+                }}
+                .custom-table th {{
+                    padding: 8px 12px;
+                    text-align: center;
+                    font-weight: bold;
+                    color: #ffffff;
+                    border: 1px solid #2d3748;
+                    border-bottom: 2px solid #4a5568;
+                }}
+                .custom-table td {{
+                    padding: 8px 10px;
+                    border: 1px solid #2d3748;
+                    color: #ffffff;
+                }}
+                .custom-table tr {{
+                    border-bottom: 1px solid #4a5568;
+                }}
+                .custom-table tbody tr:hover {{
+                    background-color: #1a202c;
+                }}
+                .summary-row {{
+                    background-color: #1a365d !important;
+                }}
+                .col-divider {{
+                    border-left: 2px solid #3b82f6 !important;
+                }}
+                .col-divider-right {{
+                    border-right: 2px solid #3b82f6 !important;
+                }}
+                .header-group {{
+                    background-color: #1e3a5f;
+                    color: #ffffff;
+                }}
+                .header-sub {{
+                    background-color: #16213e;
+                    color: #ffffff;
+                    font-size: 12px;
+                }}
+                .total-row {{
+                    background-color: #d4a017 !important;
+                    color: #000000 !important;
+                    font-weight: bold;
+                }}
+                .total-row td {{
+                    color: #000000 !important;
+                }}
+                .grand-total-row {{
+                    background-color: #1e40af !important;
+                    color: #ffffff !important;
+                    font-weight: bold;
+                }}
+                .grand-total-row td {{
+                    color: #ffffff !important;
+                }}
+                .data-row {{
+                    color: #ffffff;
+                }}
+                .data-row:hover {{
+                    background-color: #2d2d44;
+                }}
+                .text-left {{ text-align: left; }}
+                .text-right {{ text-align: right; }}
+                .text-center {{ text-align: center; }}
+            </style>
+            <div style="overflow-x: auto;">
+            <table class="custom-table">
+                <thead>
+                    <tr>
+                        <th class="header-group text-left col-divider-right" style="width: 25%;">Client - Wise</th>
+                        <th class="header-group text-center col-divider-right" style="width: 8%;">Target SOB</th>
+                        <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">No. of Cars</th>
+                        <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">Freight (₹ Lakhs)</th>
+                        <th class="header-group text-center" colspan="2" style="background-color: #0e4a6f;">Comparison (Till {compare_date})</th>
+                    </tr>
+                    <tr class="header-sub">
+                        <th class="col-divider-right"></th>
+                        <th class="col-divider-right"></th>
+                        <th>Own</th>
+                        <th>Vendor</th>
+                        <th class="col-divider-right">Total</th>
+                        <th>Own</th>
+                        <th>Vendor</th>
+                        <th class="col-divider-right">Total</th>
+                        <th>Cars</th>
+                        <th>Freight</th>
+                    </tr>
+                </thead>
+                <tbody>
             """
 
-        # Calculate Avg Per Day and Shortfall
-        days_in_period = (till_date - select_month_start).days + 1
-        avg_per_day = grand_total['Total_F'] / days_in_period / 100000 if days_in_period > 0 else 0
+            for row in final_rows:
+                is_total = row['is_total']
+                is_grand = row['category'] == 'Grand'
 
-        # Shortfall calculation (current period freight - comparison period freight)
-        shortfall = (grand_total['Total_F'] - grand_total['Freight_Comp']) / 100000
+                if is_grand:
+                    row_class = 'grand-total-row'
+                elif is_total:
+                    row_class = 'total-row'
+                else:
+                    row_class = 'data-row'
 
-        # Color based on positive/negative
-        avg_color = "#22c55e" if avg_per_day >= 0 else "#ef4444"  # Green if positive, Red if negative
-        shortfall_color = "#22c55e" if shortfall >= 0 else "#ef4444"  # Green if positive, Red if negative
+                html_table += f"""
+                    <tr class="{row_class}">
+                        <td class="text-left col-divider-right">{row['Client - Wise']}</td>
+                        <td class="text-center col-divider-right">{row['Target SQR']}</td>
+                        <td class="text-center">{row['Own']}</td>
+                        <td class="text-center">{row['Vendor']}</td>
+                        <td class="text-center col-divider-right">{row['Total']}</td>
+                        <td class="text-right">₹{row['Own_F']/100000:.2f}</td>
+                        <td class="text-right">₹{row['Vendor_F']/100000:.2f}</td>
+                        <td class="text-right col-divider-right">₹{row['Total_F']/100000:.2f}</td>
+                        <td class="text-center">{row['Cars_Comp']}</td>
+                        <td class="text-right">₹{row['Freight_Comp']/100000:.2f}</td>
+                    </tr>
+                """
 
-        # Add Avg Per Day row
-        html_table += f"""
-                <tr class="summary-row">
-                    <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Avg Per Day >></td>
-                    <td colspan="3" class="text-center" style="color: {avg_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{avg_per_day:.2f} L</td>
-                </tr>
-                <tr class="summary-row">
-                    <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Shortfall from Till {compare_date} >></td>
-                    <td colspan="3" class="text-center" style="color: {shortfall_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{shortfall:.2f} L</td>
-                </tr>
-            </tbody>
-        </table>
-        </div>
-        """
+            # Calculate Avg Per Day and Shortfall
+            days_in_period = (till_date - select_month_start).days + 1
+            avg_per_day = grand_total['Total_F'] / days_in_period / 100000 if days_in_period > 0 else 0
 
-        # Calculate dynamic height based on number of rows + summary rows
-        table_height = 100 + (len(final_rows) * 35) + 100
-        components.html(html_table, height=table_height, scrolling=False)
+            # Shortfall calculation (current period freight - comparison period freight)
+            shortfall = (grand_total['Total_F'] - grand_total['Freight_Comp']) / 100000
+
+            # Color based on positive/negative
+            avg_color = "#22c55e" if avg_per_day >= 0 else "#ef4444"  # Green if positive, Red if negative
+            shortfall_color = "#22c55e" if shortfall >= 0 else "#ef4444"  # Green if positive, Red if negative
+
+            # Add Avg Per Day row
+            html_table += f"""
+                    <tr class="summary-row">
+                        <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Avg Per Day >></td>
+                        <td colspan="3" class="text-center" style="color: {avg_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{avg_per_day:.2f} L</td>
+                    </tr>
+                    <tr class="summary-row">
+                        <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Shortfall from Till {compare_date} >></td>
+                        <td colspan="3" class="text-center" style="color: {shortfall_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{shortfall:.2f} L</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+            """
+
+            # Calculate dynamic height based on number of rows + summary rows
+            table_height = 100 + (len(final_rows) * 35) + 100
+            components.html(html_table, height=table_height, scrolling=False)
+
+        target_vs_actual_fragment()
 
     with tab2:
         st.markdown("### Daily Loading Details")
 
-        @st.fragment
+        @st.fragment(run_every=REFRESH_10_MIN)
         def daily_loading_fragment():
             # Date filter and summary in one row
             col_date, col_cars, col_trips_count, col_empty = st.columns([1, 1, 1, 1])
@@ -1459,14 +1426,16 @@ def main():
         st.markdown("### Local/Pilot Loads")
 
         # Use fragment to prevent tab switching on filter change
-        @st.fragment
+        @st.fragment(run_every=REFRESH_15_MIN)
         def local_pilot_fragment():
-            # Load KIA Local vehicle numbers dynamically from swift_vehicles
+            # Pre-load ALL vehicle types once at the start for better performance
             kia_vehicles = load_vehicles_by_type('TR_KIA_LCL')
-            # Load KIA AP Passing vehicle numbers dynamically from swift_vehicles
             kia_ap_vehicles = load_vehicles_by_type('TR_KIA_AP PASSING')
+            haridwar_vehicles = load_vehicles_by_type('TR_HRD_LCL')
+            gujarat_vehicles = load_vehicles_by_type('TR_Gujarat_LCL')
+            nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
 
-            # Create filter functions for each category
+            # Create filter functions for each category (using pre-loaded vehicle lists)
             def get_toyota_local(data):
                 return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
 
@@ -1474,10 +1443,8 @@ def main():
                 return data[data['NewPartyName'].str.contains('MAHINDRA LOGISTICS LTD.*Train Load', case=False, na=False, regex=True)]
 
             def get_haridwar_local(data):
-                # Load Haridwar Local vehicles dynamically from swift_vehicles
-                haridwar_vehicles = load_vehicles_by_type('TR_HRD_LCL')
                 if not haridwar_vehicles:
-                    return data.head(0)  # Return empty dataframe
+                    return data.head(0)
                 pattern = '|'.join([v.replace(' ', '.*') for v in haridwar_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
@@ -1497,16 +1464,12 @@ def main():
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_gujarat_local(data):
-                # Load Gujarat Local vehicles dynamically from swift_vehicles
-                gujarat_vehicles = load_vehicles_by_type('TR_Gujarat_LCL')
                 if not gujarat_vehicles:
                     return data.head(0)
                 pattern = '|'.join([v.replace(' ', '.*') for v in gujarat_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_nsk_ckn_local(data):
-                # Load NSK/Ckn-north dedicated vehicles dynamically from swift_vehicles
-                nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
                 if not nsk_ckn_vehicles:
                     return data.head(0)
                 pattern = '|'.join([v.replace(' ', '.*') for v in nsk_ckn_vehicles])
@@ -1792,898 +1755,910 @@ def main():
 
             return 'Other'
 
-        # Filter loaded trips only (same as summary box logic)
-        loaded_df = month_df[
-            (month_df['TripStatus'] != 'Empty') &
-            (month_df['DisplayParty'] != '') &
-            (month_df['DisplayParty'].notna())
-        ].copy()
-
-        # Extract Origin and Destination from Route
-        loaded_df['Origin'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
-        loaded_df['Destination'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
-
-        # Map to zones
-        loaded_df['Origin_Zone'] = loaded_df['Origin'].apply(get_zone)
-        loaded_df['Dest_Zone'] = loaded_df['Destination'].apply(get_zone)
-
-        # Create pivot tables (including Other for unmapped cities)
-        zones = ['Central', 'East', 'North', 'South', 'West']
-
-        # Build the zone matrix for Cars Lifted
-        cars_matrix = {}
-        for origin_zone in zones:
-            cars_matrix[origin_zone] = {}
-            for dest_zone in zones:
-                count = loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
-                cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
-
-        # Build the zone matrix for Trips Count
-        trips_matrix = {}
-        for origin_zone in zones:
-            trips_matrix[origin_zone] = {}
-            for dest_zone in zones:
-                count = len(loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)])
-                trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
-
-        # Function to get text color (uniform white color for all values)
-        def get_text_color(val, max_val):
-            return 'color: white;'
-
-        # Get max values for color scaling
-        cars_values = [v for row in cars_matrix.values() for v in row.values() if v > 0]
-        trips_values = [v for row in trips_matrix.values() for v in row.values() if v > 0]
-        max_cars = max(cars_values) if cars_values else 1
-        max_trips = max(trips_values) if trips_values else 1
-
-        # Calculate actual totals from loaded_df (to match summary box)
-        actual_total_trips = len(loaded_df)
-        actual_total_cars = int(loaded_df['CarQty'].sum())
-
-        # Function to build zone table HTML
-        def build_zone_table(matrix, title, max_val, actual_grand_total):
-            html = f"""
-            <h4 style="color: white; margin-bottom: 10px;">{title}</h4>
-            <style>
-                .zone-table {{ width: 100%; border-collapse: collapse; font-size: 14px; border: 2px solid #3b82f6; }}
-                .zone-table th {{ background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }}
-                .zone-table td {{ padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }}
-                .zone-table tr:nth-child(even) {{ background-color: #1a1f2e; }}
-                .zone-table tr:nth-child(odd) {{ background-color: #0e1117; }}
-                .zone-table .total-row {{ background-color: #1e40af !important; font-weight: bold; }}
-                .zone-table .total-row td {{ border: 1px solid #3b82f6; }}
-                .zone-table .row-header {{ text-align: left; font-weight: bold; font-style: italic; }}
-                .zone-table .grand-total {{ color: #fbbf24; font-weight: bold; }}
-            </style>
-            <table class="zone-table">
-                <thead>
-                    <tr>
-                        <th style="font-style: italic;">Origin Zone</th>
-            """
-            for dest_zone in zones:
-                html += f'<th>{dest_zone}</th>'
-            html += '<th>Grand Total</th></tr></thead><tbody>'
-
-            col_totals = {z: 0 for z in zones}
-
-            for origin_zone in zones:
-                row_total = 0
-                html += f'<tr><td class="row-header">{origin_zone}</td>'
-                for dest_zone in zones:
-                    val = matrix[origin_zone][dest_zone]
-                    if val > 0:
-                        row_total += val
-                        col_totals[dest_zone] += val
-                        text_style = get_text_color(val, max_val)
-                        html += f'<td style="{text_style}">{val}</td>'
-                    else:
-                        html += '<td></td>'
-                html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
-
-            html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
-            for dest_zone in zones:
-                html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
-            html += f'<td class="grand-total">{actual_grand_total}</td></tr>'
-
-            html += '</tbody></table>'
-            return html
-
-        # Display both tables side by side
-        col_table1, col_table2 = st.columns(2)
-
-        with col_table1:
-            st.markdown("#### No. of Cars Lifted")
-            cars_html = build_zone_table(cars_matrix, "", max_cars, actual_total_cars)
-            components.html(cars_html, height=280)
-
-        with col_table2:
-            st.markdown("#### No. of Loaded Trips")
-            trips_html = build_zone_table(trips_matrix, "", max_trips, actual_total_trips)
-            components.html(trips_html, height=280)
-
-        # Vendor Zone Tables
-        st.markdown("---")
-        st.markdown("#### Vendor Zone View")
-
-        if not vendor_df.empty:
-            # Filter vendor data for the month
-            vendor_zone_df = vendor_df[
-                (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
-                (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
+        @st.fragment(run_every=REFRESH_15_MIN)
+        def zone_view_fragment():
+            # Filter loaded trips only (same as summary box logic)
+            loaded_df = month_df[
+                (month_df['TripStatus'] != 'Empty') &
+                (month_df['DisplayParty'] != '') &
+                (month_df['DisplayParty'].notna())
             ].copy()
 
-            if not vendor_zone_df.empty:
-                # Apply vendor mapping
-                vendor_zone_df['MappedParty'] = vendor_zone_df.apply(
-                    lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                )
-                vendor_zone_df = vendor_zone_df[vendor_zone_df['MappedParty'].notna()]
+            # Extract Origin and Destination from Route
+            loaded_df['Origin'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
+            loaded_df['Destination'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
+
+            # Map to zones
+            loaded_df['Origin_Zone'] = loaded_df['Origin'].apply(get_zone)
+            loaded_df['Dest_Zone'] = loaded_df['Destination'].apply(get_zone)
+
+            # Create pivot tables (including Other for unmapped cities)
+            zones = ['Central', 'East', 'North', 'South', 'West']
+
+            # Build the zone matrix for Cars Lifted
+            cars_matrix = {}
+            for origin_zone in zones:
+                cars_matrix[origin_zone] = {}
+                for dest_zone in zones:
+                    count = loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
+                    cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+            # Build the zone matrix for Trips Count
+            trips_matrix = {}
+            for origin_zone in zones:
+                trips_matrix[origin_zone] = {}
+                for dest_zone in zones:
+                    count = len(loaded_df[(loaded_df['Origin_Zone'] == origin_zone) & (loaded_df['Dest_Zone'] == dest_zone)])
+                    trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+            # Function to get text color (uniform white color for all values)
+            def get_text_color(val, max_val):
+                return 'color: white;'
+
+            # Get max values for color scaling
+            cars_values = [v for row in cars_matrix.values() for v in row.values() if v > 0]
+            trips_values = [v for row in trips_matrix.values() for v in row.values() if v > 0]
+            max_cars = max(cars_values) if cars_values else 1
+            max_trips = max(trips_values) if trips_values else 1
+
+            # Calculate actual totals from loaded_df (to match summary box)
+            actual_total_trips = len(loaded_df)
+            actual_total_cars = int(loaded_df['CarQty'].sum())
+
+            # Function to build zone table HTML
+            def build_zone_table(matrix, title, max_val, actual_grand_total):
+                html = f"""
+                <h4 style="color: white; margin-bottom: 10px;">{title}</h4>
+                <style>
+                    .zone-table {{ width: 100%; border-collapse: collapse; font-size: 14px; border: 2px solid #3b82f6; }}
+                    .zone-table th {{ background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #3b82f6; }}
+                    .zone-table td {{ padding: 10px; border: 1px solid #2d3748; color: white; text-align: center; }}
+                    .zone-table tr:nth-child(even) {{ background-color: #1a1f2e; }}
+                    .zone-table tr:nth-child(odd) {{ background-color: #0e1117; }}
+                    .zone-table .total-row {{ background-color: #1e40af !important; font-weight: bold; }}
+                    .zone-table .total-row td {{ border: 1px solid #3b82f6; }}
+                    .zone-table .row-header {{ text-align: left; font-weight: bold; font-style: italic; }}
+                    .zone-table .grand-total {{ color: #fbbf24; font-weight: bold; }}
+                </style>
+                <table class="zone-table">
+                    <thead>
+                        <tr>
+                            <th style="font-style: italic;">Origin Zone</th>
+                """
+                for dest_zone in zones:
+                    html += f'<th>{dest_zone}</th>'
+                html += '<th>Grand Total</th></tr></thead><tbody>'
+
+                col_totals = {z: 0 for z in zones}
+
+                for origin_zone in zones:
+                    row_total = 0
+                    html += f'<tr><td class="row-header">{origin_zone}</td>'
+                    for dest_zone in zones:
+                        val = matrix[origin_zone][dest_zone]
+                        if val > 0:
+                            row_total += val
+                            col_totals[dest_zone] += val
+                            text_style = get_text_color(val, max_val)
+                            html += f'<td style="{text_style}">{val}</td>'
+                        else:
+                            html += '<td></td>'
+                    html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
+
+                html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
+                for dest_zone in zones:
+                    html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
+                html += f'<td class="grand-total">{actual_grand_total}</td></tr>'
+
+                html += '</tbody></table>'
+                return html
+
+            # Display both tables side by side
+            col_table1, col_table2 = st.columns(2)
+
+            with col_table1:
+                st.markdown("#### No. of Cars Lifted")
+                cars_html = build_zone_table(cars_matrix, "", max_cars, actual_total_cars)
+                components.html(cars_html, height=280)
+
+            with col_table2:
+                st.markdown("#### No. of Loaded Trips")
+                trips_html = build_zone_table(trips_matrix, "", max_trips, actual_total_trips)
+                components.html(trips_html, height=280)
+
+            # Vendor Zone Tables
+            st.markdown("---")
+            st.markdown("#### Vendor Zone View")
+
+            if not vendor_df.empty:
+                # Filter vendor data for the month
+                vendor_zone_df = vendor_df[
+                    (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
+                    (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
+                ].copy()
 
                 if not vendor_zone_df.empty:
-                    # Extract Origin and Destination from Route
-                    vendor_zone_df['OriginCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
-                    vendor_zone_df['DestCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
+                    # Apply vendor mapping
+                    vendor_zone_df['MappedParty'] = vendor_zone_df.apply(
+                        lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+                    )
+                    vendor_zone_df = vendor_zone_df[vendor_zone_df['MappedParty'].notna()]
 
-                    # Map to zones
-                    vendor_zone_df['Origin_Zone'] = vendor_zone_df['OriginCity'].apply(get_zone)
-                    vendor_zone_df['Dest_Zone'] = vendor_zone_df['DestCity'].apply(get_zone)
+                    if not vendor_zone_df.empty:
+                        # Extract Origin and Destination from Route
+                        vendor_zone_df['OriginCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
+                        vendor_zone_df['DestCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
 
-                    # Build vendor zone matrix for Cars Lifted
-                    vendor_cars_matrix = {}
-                    for origin_zone in zones:
-                        vendor_cars_matrix[origin_zone] = {}
-                        for dest_zone in zones:
-                            count = vendor_zone_df[(vendor_zone_df['Origin_Zone'] == origin_zone) & (vendor_zone_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
-                            vendor_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+                        # Map to zones
+                        vendor_zone_df['Origin_Zone'] = vendor_zone_df['OriginCity'].apply(get_zone)
+                        vendor_zone_df['Dest_Zone'] = vendor_zone_df['DestCity'].apply(get_zone)
 
-                    # Build vendor zone matrix for Trips Count (unique date + vehicle combinations)
-                    vendor_trips_matrix = {}
-                    for origin_zone in zones:
-                        vendor_trips_matrix[origin_zone] = {}
-                        for dest_zone in zones:
-                            zone_data = vendor_zone_df[(vendor_zone_df['Origin_Zone'] == origin_zone) & (vendor_zone_df['Dest_Zone'] == dest_zone)]
-                            # Count unique combinations of CNDate + VehicleNo
-                            if not zone_data.empty:
-                                count = zone_data.groupby(['CNDateOnly', 'VehicleNo']).ngroups
-                            else:
-                                count = 0
-                            vendor_trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
-
-                    # Get max values for scaling
-                    vendor_cars_values = [v for row in vendor_cars_matrix.values() for v in row.values() if v > 0]
-                    vendor_trips_values = [v for row in vendor_trips_matrix.values() for v in row.values() if v > 0]
-                    max_vendor_cars = max(vendor_cars_values) if vendor_cars_values else 1
-                    max_vendor_trips = max(vendor_trips_values) if vendor_trips_values else 1
-
-                    # Calculate vendor totals
-                    vendor_total_cars = int(vendor_zone_df['CarQty'].sum())
-                    # Trips = unique combinations of date + vehicle
-                    vendor_total_trips = vendor_zone_df.groupby(['CNDateOnly', 'VehicleNo']).ngroups
-
-                    # Function to build vendor zone table HTML (purple theme)
-                    def build_vendor_zone_table(matrix, title, max_val, actual_grand_total):
-                        html = f"""
-                        <style>
-                            .vendor-zone-table {{ width: 100%; border-collapse: collapse; font-size: 14px; border: 2px solid #7c3aed; }}
-                            .vendor-zone-table th {{ background-color: #5b21b6; color: white; padding: 12px; text-align: center; border: 1px solid #7c3aed; }}
-                            .vendor-zone-table td {{ padding: 10px; border: 1px solid #4c1d95; color: white; text-align: center; }}
-                            .vendor-zone-table tr:nth-child(even) {{ background-color: #1a1f2e; }}
-                            .vendor-zone-table tr:nth-child(odd) {{ background-color: #0e1117; }}
-                            .vendor-zone-table .total-row {{ background-color: #7c3aed !important; font-weight: bold; }}
-                            .vendor-zone-table .total-row td {{ border: 1px solid #7c3aed; }}
-                            .vendor-zone-table .row-header {{ text-align: left; font-weight: bold; font-style: italic; }}
-                            .vendor-zone-table .grand-total {{ color: #fbbf24; font-weight: bold; }}
-                        </style>
-                        <table class="vendor-zone-table">
-                            <thead>
-                                <tr>
-                                    <th style="font-style: italic;">Origin Zone</th>
-                        """
-                        for dest_zone in zones:
-                            html += f'<th>{dest_zone}</th>'
-                        html += '<th>Grand Total</th></tr></thead><tbody>'
-
-                        col_totals = {z: 0 for z in zones}
-
+                        # Build vendor zone matrix for Cars Lifted
+                        vendor_cars_matrix = {}
                         for origin_zone in zones:
-                            row_total = 0
-                            html += f'<tr><td class="row-header">{origin_zone}</td>'
+                            vendor_cars_matrix[origin_zone] = {}
                             for dest_zone in zones:
-                                val = matrix[origin_zone][dest_zone]
-                                if val > 0:
-                                    row_total += val
-                                    col_totals[dest_zone] += val
-                                    html += f'<td style="color: #a78bfa;">{val}</td>'
+                                count = vendor_zone_df[(vendor_zone_df['Origin_Zone'] == origin_zone) & (vendor_zone_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
+                                vendor_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+
+                        # Build vendor zone matrix for Trips Count (unique date + vehicle combinations)
+                        vendor_trips_matrix = {}
+                        for origin_zone in zones:
+                            vendor_trips_matrix[origin_zone] = {}
+                            for dest_zone in zones:
+                                zone_data = vendor_zone_df[(vendor_zone_df['Origin_Zone'] == origin_zone) & (vendor_zone_df['Dest_Zone'] == dest_zone)]
+                                # Count unique combinations of CNDate + VehicleNo
+                                if not zone_data.empty:
+                                    count = zone_data.groupby(['CNDateOnly', 'VehicleNo']).ngroups
                                 else:
-                                    html += '<td></td>'
-                            html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
+                                    count = 0
+                                vendor_trips_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
 
-                        html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
-                        for dest_zone in zones:
-                            html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
-                        html += f'<td class="grand-total">{actual_grand_total}</td></tr>'
+                        # Get max values for scaling
+                        vendor_cars_values = [v for row in vendor_cars_matrix.values() for v in row.values() if v > 0]
+                        vendor_trips_values = [v for row in vendor_trips_matrix.values() for v in row.values() if v > 0]
+                        max_vendor_cars = max(vendor_cars_values) if vendor_cars_values else 1
+                        max_vendor_trips = max(vendor_trips_values) if vendor_trips_values else 1
 
-                        html += '</tbody></table>'
-                        return html
+                        # Calculate vendor totals
+                        vendor_total_cars = int(vendor_zone_df['CarQty'].sum())
+                        # Trips = unique combinations of date + vehicle
+                        vendor_total_trips = vendor_zone_df.groupby(['CNDateOnly', 'VehicleNo']).ngroups
 
-                    # Display vendor tables side by side
-                    col_vendor1, col_vendor2 = st.columns(2)
+                        # Function to build vendor zone table HTML (purple theme)
+                        def build_vendor_zone_table(matrix, title, max_val, actual_grand_total):
+                            html = f"""
+                            <style>
+                                .vendor-zone-table {{ width: 100%; border-collapse: collapse; font-size: 14px; border: 2px solid #7c3aed; }}
+                                .vendor-zone-table th {{ background-color: #5b21b6; color: white; padding: 12px; text-align: center; border: 1px solid #7c3aed; }}
+                                .vendor-zone-table td {{ padding: 10px; border: 1px solid #4c1d95; color: white; text-align: center; }}
+                                .vendor-zone-table tr:nth-child(even) {{ background-color: #1a1f2e; }}
+                                .vendor-zone-table tr:nth-child(odd) {{ background-color: #0e1117; }}
+                                .vendor-zone-table .total-row {{ background-color: #7c3aed !important; font-weight: bold; }}
+                                .vendor-zone-table .total-row td {{ border: 1px solid #7c3aed; }}
+                                .vendor-zone-table .row-header {{ text-align: left; font-weight: bold; font-style: italic; }}
+                                .vendor-zone-table .grand-total {{ color: #fbbf24; font-weight: bold; }}
+                            </style>
+                            <table class="vendor-zone-table">
+                                <thead>
+                                    <tr>
+                                        <th style="font-style: italic;">Origin Zone</th>
+                            """
+                            for dest_zone in zones:
+                                html += f'<th>{dest_zone}</th>'
+                            html += '<th>Grand Total</th></tr></thead><tbody>'
 
-                    with col_vendor1:
-                        st.markdown("##### Vendor - Cars Lifted")
-                        vendor_cars_html = build_vendor_zone_table(vendor_cars_matrix, "", max_vendor_cars, vendor_total_cars)
-                        components.html(vendor_cars_html, height=280)
+                            col_totals = {z: 0 for z in zones}
 
-                    with col_vendor2:
-                        st.markdown("##### Vendor - Trips")
-                        vendor_trips_html = build_vendor_zone_table(vendor_trips_matrix, "", max_vendor_trips, vendor_total_trips)
-                        components.html(vendor_trips_html, height=280)
+                            for origin_zone in zones:
+                                row_total = 0
+                                html += f'<tr><td class="row-header">{origin_zone}</td>'
+                                for dest_zone in zones:
+                                    val = matrix[origin_zone][dest_zone]
+                                    if val > 0:
+                                        row_total += val
+                                        col_totals[dest_zone] += val
+                                        html += f'<td style="color: #a78bfa;">{val}</td>'
+                                    else:
+                                        html += '<td></td>'
+                                html += f'<td style="font-weight: bold; color: white;">{row_total}</td></tr>'
+
+                            html += '<tr class="total-row"><td class="row-header">Grand Total</td>'
+                            for dest_zone in zones:
+                                html += f'<td class="grand-total">{col_totals[dest_zone]}</td>'
+                            html += f'<td class="grand-total">{actual_grand_total}</td></tr>'
+
+                            html += '</tbody></table>'
+                            return html
+
+                        # Display vendor tables side by side
+                        col_vendor1, col_vendor2 = st.columns(2)
+
+                        with col_vendor1:
+                            st.markdown("##### Vendor - Cars Lifted")
+                            vendor_cars_html = build_vendor_zone_table(vendor_cars_matrix, "", max_vendor_cars, vendor_total_cars)
+                            components.html(vendor_cars_html, height=280)
+
+                        with col_vendor2:
+                            st.markdown("##### Vendor - Trips")
+                            vendor_trips_html = build_vendor_zone_table(vendor_trips_matrix, "", max_vendor_trips, vendor_total_trips)
+                            components.html(vendor_trips_html, height=280)
+                    else:
+                        st.info("No mapped vendor data for this month.")
                 else:
-                    st.info("No mapped vendor data for this month.")
+                    st.info("No vendor data for this month.")
             else:
-                st.info("No vendor data for this month.")
-        else:
-            st.info("No vendor data available.")
+                st.info("No vendor data available.")
 
-        # Chart: Zone by Car Lifted (excluding DC Movement)
-        st.markdown("---")
-        st.markdown("#### Zone by Car Lifted")
-        st.caption("*Note: DC Movement not included*")
+            # Chart: Zone by Car Lifted (excluding DC Movement)
+            st.markdown("---")
+            st.markdown("#### Zone by Car Lifted")
+            st.caption("*Note: DC Movement not included*")
 
-        import plotly.graph_objects as go
+            import plotly.graph_objects as go
 
-        # Filter out DC Movement for this chart
-        chart_df = loaded_df[~loaded_df['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
+            # Filter out DC Movement for this chart
+            chart_df = loaded_df[~loaded_df['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
 
-        # Recalculate zone matrix excluding DC Movement
-        chart_cars_matrix = {}
-        for origin_zone in zones:
-            chart_cars_matrix[origin_zone] = {}
-            for dest_zone in zones:
-                count = chart_df[(chart_df['Origin_Zone'] == origin_zone) & (chart_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
-                chart_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
+            # Recalculate zone matrix excluding DC Movement
+            chart_cars_matrix = {}
+            for origin_zone in zones:
+                chart_cars_matrix[origin_zone] = {}
+                for dest_zone in zones:
+                    count = chart_df[(chart_df['Origin_Zone'] == origin_zone) & (chart_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
+                    chart_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
 
-        # Get top routes for chart
-        route_data = []
-        for oz in zones:
-            for dz in zones:
-                if chart_cars_matrix[oz][dz] > 0:
-                    route_data.append({
-                        'Route': f'{oz} → {dz}',
-                        'Cars': chart_cars_matrix[oz][dz]
-                    })
+            # Get top routes for chart
+            route_data = []
+            for oz in zones:
+                for dz in zones:
+                    if chart_cars_matrix[oz][dz] > 0:
+                        route_data.append({
+                            'Route': f'{oz} → {dz}',
+                            'Cars': chart_cars_matrix[oz][dz]
+                        })
 
-        if route_data:
-            route_df = pd.DataFrame(route_data).sort_values('Cars', ascending=True).tail(10)
+            if route_data:
+                route_df = pd.DataFrame(route_data).sort_values('Cars', ascending=True).tail(10)
 
-            fig = go.Figure()
-            fig.add_trace(go.Bar(
-                y=route_df['Route'],
-                x=route_df['Cars'],
-                orientation='h',
-                marker_color=['#22c55e' if c >= route_df['Cars'].quantile(0.7) else '#3b82f6' if c >= route_df['Cars'].quantile(0.4) else '#eab308' for c in route_df['Cars']],
-                text=route_df['Cars'],
-                textposition='outside'
-            ))
-            fig.update_layout(
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='white'),
-                height=400,
-                xaxis_title='Cars Lifted',
-                yaxis_title='',
-                margin=dict(l=100, r=50, t=20, b=50)
-            )
-            fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
-            fig.update_yaxes(showgrid=False)
-            st.plotly_chart(fig, use_container_width=True)
+                fig = go.Figure()
+                fig.add_trace(go.Bar(
+                    y=route_df['Route'],
+                    x=route_df['Cars'],
+                    orientation='h',
+                    marker_color=['#22c55e' if c >= route_df['Cars'].quantile(0.7) else '#3b82f6' if c >= route_df['Cars'].quantile(0.4) else '#eab308' for c in route_df['Cars']],
+                    text=route_df['Cars'],
+                    textposition='outside'
+                ))
+                fig.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='white'),
+                    height=400,
+                    xaxis_title='Cars Lifted',
+                    yaxis_title='',
+                    margin=dict(l=100, r=50, t=20, b=50)
+                )
+                fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
+                fig.update_yaxes(showgrid=False)
+                st.plotly_chart(fig, use_container_width=True)
 
-        # Show unmapped cities if any
-        other_origins = loaded_df[loaded_df['Origin_Zone'] == 'Other']['Origin'].unique()
-        other_dests = loaded_df[loaded_df['Dest_Zone'] == 'Other']['Destination'].unique()
+            # Show unmapped cities if any
+            other_origins = loaded_df[loaded_df['Origin_Zone'] == 'Other']['Origin'].unique()
+            other_dests = loaded_df[loaded_df['Dest_Zone'] == 'Other']['Destination'].unique()
 
-        if len(other_origins) > 0 or len(other_dests) > 0:
-            with st.expander("Unmapped Cities (Other Zone)"):
-                if len(other_origins) > 0:
-                    st.write("**Origins:**", ', '.join(sorted(set(other_origins))))
-                if len(other_dests) > 0:
-                    st.write("**Destinations:**", ', '.join(sorted(set(other_dests))))
+            if len(other_origins) > 0 or len(other_dests) > 0:
+                with st.expander("Unmapped Cities (Other Zone)"):
+                    if len(other_origins) > 0:
+                        st.write("**Origins:**", ', '.join(sorted(set(other_origins))))
+                    if len(other_dests) > 0:
+                        st.write("**Destinations:**", ', '.join(sorted(set(other_dests))))
+
+        zone_view_fragment()
 
     with tab5:
         st.markdown("### Pending CN - Triplogs")
 
-        # D-3 date filter (show trips loaded on or before 3 days ago)
-        d_minus_3 = datetime.now().date() - timedelta(days=3)
+        @st.fragment(run_every=REFRESH_10_MIN)
+        def pending_cn_fragment():
+            # D-3 date filter (show trips loaded on or before 3 days ago)
+            d_minus_3 = datetime.now().date() - timedelta(days=3)
 
-        # Load excluded trips from database
-        excluded_trips = load_excluded_trips()
+            # Load excluded trips from database
+            excluded_trips = load_excluded_trips()
 
-        # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
-        pending_cn_df = month_df[
-            (month_df['TripStatus'] == 'Loaded') &
-            ((month_df['LRNos'].isna()) | (month_df['LRNos'] == '') | (month_df['LRNos'].str.strip() == '')) &
-            (month_df['LoadingDate'].dt.date <= d_minus_3) &
-            (~month_df['TLHSNo'].isin(excluded_trips))
-        ].copy()
+            # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
+            pending_cn_df = month_df[
+                (month_df['TripStatus'] == 'Loaded') &
+                ((month_df['LRNos'].isna()) | (month_df['LRNos'] == '') | (month_df['LRNos'].str.strip() == '')) &
+                (month_df['LoadingDate'].dt.date <= d_minus_3) &
+                (~month_df['TLHSNo'].isin(excluded_trips))
+            ].copy()
 
-        # Cross-check with cn_data to exclude trips that have CN records
-        if len(pending_cn_df) > 0:
-            try:
-                conn = get_db_connection()
-                if conn is not None:
-                    # Load cn_data for matching (Method 1: cn_date + vehicle_no)
-                    cn_query = """
-                        SELECT DISTINCT cn_date, vehicle_no
-                        FROM cn_data
-                        WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
-                    """
-                    cn_records = pd.read_sql_query(cn_query, conn)
+            # Cross-check with cn_data to exclude trips that have CN records
+            if len(pending_cn_df) > 0:
+                try:
+                    conn = get_db_connection()
+                    if conn is not None:
+                        # Load cn_data for matching (Method 1: cn_date + vehicle_no)
+                        cn_query = """
+                            SELECT DISTINCT cn_date, vehicle_no
+                            FROM cn_data
+                            WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
+                        """
+                        cn_records = pd.read_sql_query(cn_query, conn)
 
-                    # Load cn_data for Own Vehicle matching (Method 2: route + vehicle_no where tl_no is blank)
-                    own_vehicle_query = """
-                        SELECT DISTINCT route, vehicle_no
-                        FROM cn_data
-                        WHERE (tl_no IS NULL OR tl_no = '')
-                          AND vehicle_type = 'Own Vehicle'
-                          AND route IS NOT NULL AND route != ''
-                          AND vehicle_no IS NOT NULL AND vehicle_no != ''
-                    """
-                    own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
-                    conn.close()
+                        # Load cn_data for Own Vehicle matching (Method 2: route + vehicle_no where tl_no is blank)
+                        own_vehicle_query = """
+                            SELECT DISTINCT route, vehicle_no
+                            FROM cn_data
+                            WHERE (tl_no IS NULL OR tl_no = '')
+                              AND vehicle_type = 'Own Vehicle'
+                              AND route IS NOT NULL AND route != ''
+                              AND vehicle_no IS NOT NULL AND vehicle_no != ''
+                        """
+                        own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
+                        conn.close()
 
-                    # Method 1: Match by cn_date + vehicle_no
-                    if not cn_records.empty:
-                        cn_records['cn_date'] = pd.to_datetime(cn_records['cn_date'], errors='coerce').dt.date
-                        cn_records['vehicle_no'] = cn_records['vehicle_no'].str.upper().str.strip()
+                        # Method 1: Match by cn_date + vehicle_no
+                        if not cn_records.empty:
+                            cn_records['cn_date'] = pd.to_datetime(cn_records['cn_date'], errors='coerce').dt.date
+                            cn_records['vehicle_no'] = cn_records['vehicle_no'].str.upper().str.strip()
 
-                        # Create lookup key for cn_data
-                        cn_records['lookup_key'] = cn_records['cn_date'].astype(str) + '_' + cn_records['vehicle_no']
-                        cn_keys = set(cn_records['lookup_key'].tolist())
+                            # Create lookup key for cn_data
+                            cn_records['lookup_key'] = cn_records['cn_date'].astype(str) + '_' + cn_records['vehicle_no']
+                            cn_keys = set(cn_records['lookup_key'].tolist())
 
-                        # Create lookup key for pending trips
-                        pending_cn_df['LoadingDateOnly'] = pending_cn_df['LoadingDate'].dt.date
-                        pending_cn_df['VehicleNoClean'] = pending_cn_df['VehicleNo'].str.upper().str.strip()
-                        pending_cn_df['lookup_key'] = pending_cn_df['LoadingDateOnly'].astype(str) + '_' + pending_cn_df['VehicleNoClean']
+                            # Create lookup key for pending trips
+                            pending_cn_df['LoadingDateOnly'] = pending_cn_df['LoadingDate'].dt.date
+                            pending_cn_df['VehicleNoClean'] = pending_cn_df['VehicleNo'].str.upper().str.strip()
+                            pending_cn_df['lookup_key'] = pending_cn_df['LoadingDateOnly'].astype(str) + '_' + pending_cn_df['VehicleNoClean']
 
-                        # Exclude trips that have matching CN records
-                        pending_cn_df = pending_cn_df[~pending_cn_df['lookup_key'].isin(cn_keys)]
+                            # Exclude trips that have matching CN records
+                            pending_cn_df = pending_cn_df[~pending_cn_df['lookup_key'].isin(cn_keys)]
 
-                    # Method 2: Match Own Vehicle by route + vehicle_no (for records where tl_no is blank)
-                    if not own_vehicle_records.empty and len(pending_cn_df) > 0:
-                        own_vehicle_records['route'] = own_vehicle_records['route'].str.upper().str.strip()
-                        own_vehicle_records['vehicle_no'] = own_vehicle_records['vehicle_no'].str.upper().str.strip()
+                        # Method 2: Match Own Vehicle by route + vehicle_no (for records where tl_no is blank)
+                        if not own_vehicle_records.empty and len(pending_cn_df) > 0:
+                            own_vehicle_records['route'] = own_vehicle_records['route'].str.upper().str.strip()
+                            own_vehicle_records['vehicle_no'] = own_vehicle_records['vehicle_no'].str.upper().str.strip()
 
-                        # Create lookup key for own vehicle cn_data (route + vehicle_no)
-                        own_vehicle_records['route_vehicle_key'] = own_vehicle_records['route'] + '_' + own_vehicle_records['vehicle_no']
-                        own_vehicle_keys = set(own_vehicle_records['route_vehicle_key'].tolist())
+                            # Create lookup key for own vehicle cn_data (route + vehicle_no)
+                            own_vehicle_records['route_vehicle_key'] = own_vehicle_records['route'] + '_' + own_vehicle_records['vehicle_no']
+                            own_vehicle_keys = set(own_vehicle_records['route_vehicle_key'].tolist())
 
-                        # Create lookup key for pending trips (Route + VehicleNo)
-                        pending_cn_df['RouteClean'] = pending_cn_df['Route'].str.upper().str.strip()
-                        pending_cn_df['VehicleNoClean'] = pending_cn_df['VehicleNo'].str.upper().str.strip()
-                        pending_cn_df['route_vehicle_key'] = pending_cn_df['RouteClean'] + '_' + pending_cn_df['VehicleNoClean']
+                            # Create lookup key for pending trips (Route + VehicleNo)
+                            pending_cn_df['RouteClean'] = pending_cn_df['Route'].str.upper().str.strip()
+                            pending_cn_df['VehicleNoClean'] = pending_cn_df['VehicleNo'].str.upper().str.strip()
+                            pending_cn_df['route_vehicle_key'] = pending_cn_df['RouteClean'] + '_' + pending_cn_df['VehicleNoClean']
 
-                        # Exclude trips that match Own Vehicle CN records by route + vehicle_no
-                        pending_cn_df = pending_cn_df[~pending_cn_df['route_vehicle_key'].isin(own_vehicle_keys)]
-            except Exception as e:
-                st.warning(f"Could not cross-check with cn_data: {e}")
+                            # Exclude trips that match Own Vehicle CN records by route + vehicle_no
+                            pending_cn_df = pending_cn_df[~pending_cn_df['route_vehicle_key'].isin(own_vehicle_keys)]
+                except Exception as e:
+                    st.warning(f"Could not cross-check with cn_data: {e}")
 
-        st.caption(f"*Showing trips loaded on or before {d_minus_3.strftime('%d-%b-%Y')} (D-3)*")
+            st.caption(f"*Showing trips loaded on or before {d_minus_3.strftime('%d-%b-%Y')} (D-3)*")
 
-        if len(pending_cn_df) > 0:
-            # Sort by loading date
-            pending_cn_df = pending_cn_df.sort_values('LoadingDate', ascending=True)
+            if len(pending_cn_df) > 0:
+                # Sort by loading date
+                pending_cn_df = pending_cn_df.sort_values('LoadingDate', ascending=True)
 
-            # Prepare display table data
-            display_cols = ['TLHSNo', 'LoadingDate', 'VehicleNo', 'DriverName', 'DriverCode', 'Route', 'Party', 'CarQty']
-            available_cols = [col for col in display_cols if col in pending_cn_df.columns]
+                # Prepare display table data
+                display_cols = ['TLHSNo', 'LoadingDate', 'VehicleNo', 'DriverName', 'DriverCode', 'Route', 'Party', 'CarQty']
+                available_cols = [col for col in display_cols if col in pending_cn_df.columns]
 
-            display_df = pending_cn_df[available_cols].copy()
-            display_df['LoadingDate'] = display_df['LoadingDate'].dt.strftime('%d-%b-%Y')
+                display_df = pending_cn_df[available_cols].copy()
+                display_df['LoadingDate'] = display_df['LoadingDate'].dt.strftime('%d-%b-%Y')
 
-            # Combine Driver Name with Code
-            display_df['Driver'] = display_df.apply(
-                lambda row: f"{row['DriverName']} ({row['DriverCode']})" if pd.notna(row['DriverCode']) and row['DriverCode'] != '' else row['DriverName'],
-                axis=1
-            )
-
-            # Select final columns
-            final_cols = ['TLHSNo', 'LoadingDate', 'VehicleNo', 'Driver', 'Route', 'Party', 'CarQty']
-            display_df = display_df[final_cols]
-            display_df.columns = ['Trip No', 'Loading Date', 'Vehicle No', 'Driver', 'Route', 'Party', 'Cars']
-
-            # Layout: Summary on left, Table on right
-            col_left, col_right = st.columns([1, 3])
-
-            with col_left:
-                # Total Summary
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                    <div style="color: #fecaca; font-size: 12px;">Total Pending Trips</div>
-                    <div style="color: white; font-size: 28px; font-weight: bold;">{len(pending_cn_df)}</div>
-                </div>
-                <div style="background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
-                    <div style="color: #bfdbfe; font-size: 12px;">Total Cars</div>
-                    <div style="color: white; font-size: 28px; font-weight: bold;">{int(pending_cn_df['CarQty'].sum())}</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Party-wise summary
-                party_summary = pending_cn_df.groupby('Party').agg({
-                    'TLHSNo': 'count',
-                    'CarQty': 'sum'
-                }).reset_index()
-                party_summary.columns = ['Party', 'Trips', 'Cars']
-                party_summary = party_summary.sort_values('Trips', ascending=False)
-                party_summary['Cars'] = party_summary['Cars'].astype(int)
-
-                st.markdown("**Party-wise Summary**")
-                party_html = """
-                <style>
-                    .party-summary { width: 100%; border-collapse: collapse; font-size: 11px; }
-                    .party-summary th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
-                    .party-summary td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
-                    .party-summary tr:nth-child(even) { background-color: #1f2937; }
-                </style>
-                <table class="party-summary">
-                    <thead><tr><th>Party</th><th style="text-align:center;">Trips</th><th style="text-align:center;">Cars</th></tr></thead>
-                    <tbody>
-                """
-                for _, row in party_summary.iterrows():
-                    party_html += f"<tr><td>{row['Party'][:35]}{'...' if len(str(row['Party'])) > 35 else ''}</td><td style='text-align:center; color: #fbbf24;'>{row['Trips']}</td><td style='text-align:center; color: #34d399;'>{row['Cars']}</td></tr>"
-                party_html += "</tbody></table>"
-                components.html(party_html, height=min(len(party_summary) * 30 + 35, 350), scrolling=True)
-
-            with col_right:
-                # Build HTML table
-                pending_html = """
-                <style>
-                    .pending-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
-                    .pending-table thead { position: sticky; top: 0; z-index: 10; }
-                    .pending-table th { background-color: #dc2626; color: white; padding: 8px; text-align: left; }
-                    .pending-table td { padding: 6px 8px; border-bottom: 1px solid #374151; color: white; }
-                    .pending-table tr:hover { background-color: #1f2937; }
-                </style>
-                <div style="max-height: 550px; overflow-y: auto;">
-                <table class="pending-table">
-                    <thead>
-                        <tr>
-                """
-                for col in display_df.columns:
-                    pending_html += f"<th>{col}</th>"
-                pending_html += "</tr></thead><tbody>"
-
-                for _, row in display_df.iterrows():
-                    pending_html += "<tr>"
-                    for col in display_df.columns:
-                        pending_html += f"<td>{row[col]}</td>"
-                    pending_html += "</tr>"
-
-                pending_html += "</tbody></table></div>"
-                components.html(pending_html, height=550, scrolling=True)
-
-                # Download button for Pending CN data
-                pending_csv = display_df.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download Pending CN Data",
-                    data=pending_csv,
-                    file_name=f"pending_cn_trips_{datetime.now().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                    key="pending_cn_download"
+                # Combine Driver Name with Code
+                display_df['Driver'] = display_df.apply(
+                    lambda row: f"{row['DriverName']} ({row['DriverCode']})" if pd.notna(row['DriverCode']) and row['DriverCode'] != '' else row['DriverName'],
+                    axis=1
                 )
-        else:
-            st.success("No pending CN trips found for this month!")
+
+                # Select final columns
+                final_cols = ['TLHSNo', 'LoadingDate', 'VehicleNo', 'Driver', 'Route', 'Party', 'CarQty']
+                display_df = display_df[final_cols]
+                display_df.columns = ['Trip No', 'Loading Date', 'Vehicle No', 'Driver', 'Route', 'Party', 'Cars']
+
+                # Layout: Summary on left, Table on right
+                col_left, col_right = st.columns([1, 3])
+
+                with col_left:
+                    # Total Summary
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <div style="color: #fecaca; font-size: 12px;">Total Pending Trips</div>
+                        <div style="color: white; font-size: 28px; font-weight: bold;">{len(pending_cn_df)}</div>
+                    </div>
+                    <div style="background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                        <div style="color: #bfdbfe; font-size: 12px;">Total Cars</div>
+                        <div style="color: white; font-size: 28px; font-weight: bold;">{int(pending_cn_df['CarQty'].sum())}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Party-wise summary
+                    party_summary = pending_cn_df.groupby('Party').agg({
+                        'TLHSNo': 'count',
+                        'CarQty': 'sum'
+                    }).reset_index()
+                    party_summary.columns = ['Party', 'Trips', 'Cars']
+                    party_summary = party_summary.sort_values('Trips', ascending=False)
+                    party_summary['Cars'] = party_summary['Cars'].astype(int)
+
+                    st.markdown("**Party-wise Summary**")
+                    party_html = """
+                    <style>
+                        .party-summary { width: 100%; border-collapse: collapse; font-size: 11px; }
+                        .party-summary th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
+                        .party-summary td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
+                        .party-summary tr:nth-child(even) { background-color: #1f2937; }
+                    </style>
+                    <table class="party-summary">
+                        <thead><tr><th>Party</th><th style="text-align:center;">Trips</th><th style="text-align:center;">Cars</th></tr></thead>
+                        <tbody>
+                    """
+                    for _, row in party_summary.iterrows():
+                        party_html += f"<tr><td>{row['Party'][:35]}{'...' if len(str(row['Party'])) > 35 else ''}</td><td style='text-align:center; color: #fbbf24;'>{row['Trips']}</td><td style='text-align:center; color: #34d399;'>{row['Cars']}</td></tr>"
+                    party_html += "</tbody></table>"
+                    components.html(party_html, height=min(len(party_summary) * 30 + 35, 350), scrolling=True)
+
+                with col_right:
+                    # Build HTML table
+                    pending_html = """
+                    <style>
+                        .pending-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+                        .pending-table thead { position: sticky; top: 0; z-index: 10; }
+                        .pending-table th { background-color: #dc2626; color: white; padding: 8px; text-align: left; }
+                        .pending-table td { padding: 6px 8px; border-bottom: 1px solid #374151; color: white; }
+                        .pending-table tr:hover { background-color: #1f2937; }
+                    </style>
+                    <div style="max-height: 550px; overflow-y: auto;">
+                    <table class="pending-table">
+                        <thead>
+                            <tr>
+                    """
+                    for col in display_df.columns:
+                        pending_html += f"<th>{col}</th>"
+                    pending_html += "</tr></thead><tbody>"
+
+                    for _, row in display_df.iterrows():
+                        pending_html += "<tr>"
+                        for col in display_df.columns:
+                            pending_html += f"<td>{row[col]}</td>"
+                        pending_html += "</tr>"
+
+                    pending_html += "</tbody></table></div>"
+                    components.html(pending_html, height=550, scrolling=True)
+
+                    # Download button for Pending CN data
+                    pending_csv = display_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Pending CN Data",
+                        data=pending_csv,
+                        file_name=f"pending_cn_trips_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                        key="pending_cn_download"
+                    )
+            else:
+                st.success("No pending CN trips found for this month!")
+
+        pending_cn_fragment()
 
     with tab6:
         st.markdown("### Unbilled CN - POD Received")
         st.caption("*CNs where Bill No is blank but POD Receipt No exists - grouped by Category and Month*")
 
-        # Load unbilled CNs (bill_no blank, pod_receipt_no not blank)
-        try:
-            conn = get_db_connection()
-            if conn is not None:
-                unbilled_query = """
-                    SELECT billing_party,
-                           TO_CHAR(cn_date, 'YYYY-MM') as month,
-                           TO_CHAR(cn_date, 'Mon''YY') as month_display,
-                           COUNT(cn_no) as cn_count,
-                           SUM(qty) as qty_total,
-                           SUM(basic_freight) as unbilled_amount
-                    FROM cn_data
-                    WHERE (bill_no IS NULL OR bill_no = '')
-                      AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
-                      AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                    GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
-                    ORDER BY billing_party, month DESC
-                """
-                unbilled_df = pd.read_sql_query(unbilled_query, conn)
-                conn.close()
+        @st.fragment(run_every=REFRESH_20_MIN)
+        def unbilled_cn_fragment():
+            # Load unbilled CNs (bill_no blank, pod_receipt_no not blank)
+            try:
+                conn = get_db_connection()
+                if conn is not None:
+                    unbilled_query = """
+                        SELECT billing_party,
+                               TO_CHAR(cn_date, 'YYYY-MM') as month,
+                               TO_CHAR(cn_date, 'Mon''YY') as month_display,
+                               COUNT(cn_no) as cn_count,
+                               SUM(qty) as qty_total,
+                               SUM(basic_freight) as unbilled_amount
+                        FROM cn_data
+                        WHERE (bill_no IS NULL OR bill_no = '')
+                          AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
+                          AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                        GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
+                        ORDER BY billing_party, month DESC
+                    """
+                    unbilled_df = pd.read_sql_query(unbilled_query, conn)
+                    conn.close()
 
-                if not unbilled_df.empty:
-                    # Add category for grouping
-                    unbilled_df['category'] = unbilled_df['billing_party'].apply(get_client_category)
+                    if not unbilled_df.empty:
+                        # Add category for grouping
+                        unbilled_df['category'] = unbilled_df['billing_party'].apply(get_client_category)
 
-                    # Get unique months for columns
-                    months = unbilled_df[['month', 'month_display']].drop_duplicates().sort_values('month', ascending=False)
-                    month_order = months['month_display'].tolist()
+                        # Get unique months for columns
+                        months = unbilled_df[['month', 'month_display']].drop_duplicates().sort_values('month', ascending=False)
+                        month_order = months['month_display'].tolist()
 
-                    # Pivot tables
-                    pivot_cn = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='cn_count', aggfunc='sum', fill_value=0)
-                    pivot_qty = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='qty_total', aggfunc='sum', fill_value=0)
-                    pivot_amount = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='unbilled_amount', aggfunc='sum', fill_value=0)
+                        # Pivot tables
+                        pivot_cn = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='cn_count', aggfunc='sum', fill_value=0)
+                        pivot_qty = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='qty_total', aggfunc='sum', fill_value=0)
+                        pivot_amount = unbilled_df.pivot_table(index='billing_party', columns='month_display', values='unbilled_amount', aggfunc='sum', fill_value=0)
 
-                    # Reorder columns
-                    pivot_cn = pivot_cn.reindex(columns=[m for m in month_order if m in pivot_cn.columns])
-                    pivot_qty = pivot_qty.reindex(columns=[m for m in month_order if m in pivot_qty.columns])
-                    pivot_amount = pivot_amount.reindex(columns=[m for m in month_order if m in pivot_amount.columns])
+                        # Reorder columns
+                        pivot_cn = pivot_cn.reindex(columns=[m for m in month_order if m in pivot_cn.columns])
+                        pivot_qty = pivot_qty.reindex(columns=[m for m in month_order if m in pivot_qty.columns])
+                        pivot_amount = pivot_amount.reindex(columns=[m for m in month_order if m in pivot_amount.columns])
 
-                    # Add category to pivot index
-                    party_category = unbilled_df[['billing_party', 'category']].drop_duplicates().set_index('billing_party')['category']
+                        # Add category to pivot index
+                        party_category = unbilled_df[['billing_party', 'category']].drop_duplicates().set_index('billing_party')['category']
 
-                    # Category order
-                    category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
+                        # Category order
+                        category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
 
-                    # Calculate totals for summary boxes
-                    total_cn_count = int(unbilled_df['cn_count'].sum())
-                    total_qty = int(unbilled_df['qty_total'].sum())
-                    total_unbilled_amount = unbilled_df['unbilled_amount'].sum()
+                        # Calculate totals for summary boxes
+                        total_cn_count = int(unbilled_df['cn_count'].sum())
+                        total_qty = int(unbilled_df['qty_total'].sum())
+                        total_unbilled_amount = unbilled_df['unbilled_amount'].sum()
 
-                    # Layout: Summary on left, Table on right
-                    col_left, col_right = st.columns([1, 4])
+                        # Layout: Summary on left, Table on right
+                        col_left, col_right = st.columns([1, 4])
 
-                    with col_left:
-                        # Summary boxes
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
-                            <div style="color: #dbeafe; font-size: 14px;">Total No. of CN</div>
-                            <div style="color: white; font-size: 32px; font-weight: bold;">{total_cn_count:,}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        with col_left:
+                            # Summary boxes
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
+                                <div style="color: #dbeafe; font-size: 14px;">Total No. of CN</div>
+                                <div style="color: white; font-size: 32px; font-weight: bold;">{total_cn_count:,}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
-                            <div style="color: #ede9fe; font-size: 14px;">Total Qty</div>
-                            <div style="color: white; font-size: 32px; font-weight: bold;">{total_qty:,}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
+                                <div style="color: #ede9fe; font-size: 14px;">Total Qty</div>
+                                <div style="color: white; font-size: 32px; font-weight: bold;">{total_qty:,}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px; border-radius: 10px; text-align: center;">
-                            <div style="color: #d1fae5; font-size: 14px;">Total Unbilled Amount</div>
-                            <div style="color: white; font-size: 32px; font-weight: bold;">₹{total_unbilled_amount/100000:.2f}L</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 20px; border-radius: 10px; text-align: center;">
+                                <div style="color: #d1fae5; font-size: 14px;">Total Unbilled Amount</div>
+                                <div style="color: white; font-size: 32px; font-weight: bold;">₹{total_unbilled_amount/100000:.2f}L</div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
-                    with col_right:
-                        # Build HTML table with sticky header and first column
-                        unbilled_html = """
-                        <div style="overflow: auto; max-width: 100%; max-height: 550px;">
-                        <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border: 1px solid #64748b;">
-                        <thead>
-                            <tr style="background: #1e3a5f; color: white;">
-                                <th rowspan="2" style="padding: 12px; text-align: left; border: 1px solid #64748b; min-width: 280px; vertical-align: middle; position: sticky; left: 0; top: 0; z-index: 3; background: #1e3a5f;">Billing Party</th>
-                        """
-
-                        for month in pivot_cn.columns:
-                            unbilled_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 1px solid #64748b; position: sticky; top: 0; z-index: 2; background: #1e3a5f;">{month}</th>'
-
-                        unbilled_html += """
-                            </tr>
-                            <tr style="background: #1e3a5f; color: #e0f2fe;">
-                        """
-
-                        for month in pivot_cn.columns:
-                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">No. of CN</th>'
-                            unbilled_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">Qty</th>'
-                            unbilled_html += '<th style="padding: 8px; text-align: right; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">Unbilled Amt</th>'
-
-                        unbilled_html += "</tr></thead><tbody>"
-
-                        # Grand totals
-                        grand_cn = {m: 0 for m in pivot_cn.columns}
-                        grand_qty = {m: 0 for m in pivot_cn.columns}
-                        grand_amount = {m: 0 for m in pivot_cn.columns}
-
-                        row_idx = 0
-                        for category in category_order:
-                            # Get parties in this category
-                            cat_parties = [p for p in pivot_cn.index if party_category.get(p) == category]
-
-                            if not cat_parties:
-                                continue
-
-                            # Category totals
-                            cat_cn = {m: 0 for m in pivot_cn.columns}
-                            cat_qty = {m: 0 for m in pivot_cn.columns}
-                            cat_amount = {m: 0 for m in pivot_cn.columns}
-
-                            # Add party rows
-                            for party in sorted(cat_parties):
-                                bg_color = '#1e293b' if row_idx % 2 == 0 else '#0f172a'
-                                unbilled_html += f'<tr style="background: {bg_color}; color: white;">'
-                                unbilled_html += f'<td style="padding: 8px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: {bg_color};">{party}</td>'
-
-                                for month in pivot_cn.columns:
-                                    cn_count = int(pivot_cn.loc[party, month])
-                                    qty_count = int(pivot_qty.loc[party, month])
-                                    amount = pivot_amount.loc[party, month]
-                                    cat_cn[month] += cn_count
-                                    cat_qty[month] += qty_count
-                                    cat_amount[month] += amount
-                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 8px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
-
-                                unbilled_html += "</tr>"
-                                row_idx += 1
-
-                            # Add to grand totals
-                            for month in pivot_cn.columns:
-                                grand_cn[month] += cat_cn[month]
-                                grand_qty[month] += cat_qty[month]
-                                grand_amount[month] += cat_amount[month]
-
-                            # Category total row (gold) - only show if more than 1 party
-                            if len(cat_parties) > 1:
-                                unbilled_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
-                                unbilled_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
-
-                                for month in pivot_cn.columns:
-                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
-                                    unbilled_html += f'<td style="padding: 10px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
-
-                                unbilled_html += "</tr>"
-
-                        # Grand total row (dark blue)
-                        unbilled_html += '<tr style="background: #1e3a5f; color: white; font-weight: bold;">'
-                        unbilled_html += '<td style="padding: 12px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #1e3a5f;">Grand Total</td>'
-
-                        for month in pivot_cn.columns:
-                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_cn[month]}</td>'
-                            unbilled_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_qty[month]}</td>'
-                            unbilled_html += f'<td style="padding: 12px; text-align: right; border: 1px solid #64748b;">₹{grand_amount[month]:,.0f}</td>'
-
-                        unbilled_html += "</tr></tbody></table></div>"
-
-                        components.html(unbilled_html, height=600, scrolling=True)
-
-                        # Download button - Raw CN data
-                        conn_download = get_db_connection()
-                        if conn_download is not None:
-                            raw_unbilled_query = """
-                                SELECT cn_no, cn_date, billing_party, origin, route,
-                                       vehicle_no, qty, basic_freight, pod_receipt_no
-                                FROM cn_data
-                                WHERE (bill_no IS NULL OR bill_no = '')
-                                  AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
-                                  AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                                ORDER BY cn_date DESC, billing_party
+                        with col_right:
+                            # Build HTML table with sticky header and first column
+                            unbilled_html = """
+                            <div style="overflow: auto; max-width: 100%; max-height: 550px;">
+                            <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border: 1px solid #64748b;">
+                            <thead>
+                                <tr style="background: #1e3a5f; color: white;">
+                                    <th rowspan="2" style="padding: 12px; text-align: left; border: 1px solid #64748b; min-width: 280px; vertical-align: middle; position: sticky; left: 0; top: 0; z-index: 3; background: #1e3a5f;">Billing Party</th>
                             """
-                            raw_unbilled_df = pd.read_sql_query(raw_unbilled_query, conn_download)
-                            conn_download.close()
 
-                            raw_unbilled_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
-                                                       'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No']
-                            unbilled_csv = raw_unbilled_df.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Download Unbilled CN Data",
-                                data=unbilled_csv,
-                                file_name=f"unbilled_cn_{datetime.now().strftime('%Y%m%d')}.csv",
-                                mime="text/csv",
-                                key="unbilled_cn_download"
-                            )
-                else:
-                    st.success("No unbilled CNs found!")
-        except Exception as e:
-            st.error(f"Error loading unbilled CN data: {e}")
+                            for month in pivot_cn.columns:
+                                unbilled_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 1px solid #64748b; position: sticky; top: 0; z-index: 2; background: #1e3a5f;">{month}</th>'
 
-        # Second table: Pending POD (bill_no blank, pod_receipt_no blank, ETA < D-4)
-        st.markdown("---")
-        st.markdown("### Unbilled CN - POD not Punch/Received")
-        st.caption("*CNs where Bill No is blank, POD Receipt No is blank, and ETA < D-4*")
+                            unbilled_html += """
+                                </tr>
+                                <tr style="background: #1e3a5f; color: #e0f2fe;">
+                            """
 
-        try:
-            conn = get_db_connection()
-            if conn is not None:
-                d_minus_4 = (datetime.now() - timedelta(days=4)).date()
+                            for month in pivot_cn.columns:
+                                unbilled_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">No. of CN</th>'
+                                unbilled_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">Qty</th>'
+                                unbilled_html += '<th style="padding: 8px; text-align: right; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #1e3a5f;">Unbilled Amt</th>'
 
-                pending_pod_query = f"""
-                    SELECT billing_party,
-                           TO_CHAR(cn_date, 'YYYY-MM') as month,
-                           TO_CHAR(cn_date, 'Mon''YY') as month_display,
-                           COUNT(cn_no) as cn_count,
-                           SUM(qty) as qty_total,
-                           SUM(basic_freight) as unbilled_amount
-                    FROM cn_data
-                    WHERE (bill_no IS NULL OR bill_no = '')
-                      AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
-                      AND eta < '{d_minus_4}'
-                      AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                    GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
-                    ORDER BY billing_party, month DESC
-                """
-                pending_pod_df = pd.read_sql_query(pending_pod_query, conn)
-                conn.close()
+                            unbilled_html += "</tr></thead><tbody>"
 
-                if not pending_pod_df.empty:
-                    # Add category for grouping
-                    pending_pod_df['category'] = pending_pod_df['billing_party'].apply(get_client_category)
+                            # Grand totals
+                            grand_cn = {m: 0 for m in pivot_cn.columns}
+                            grand_qty = {m: 0 for m in pivot_cn.columns}
+                            grand_amount = {m: 0 for m in pivot_cn.columns}
 
-                    # Get unique months for columns
-                    months = pending_pod_df[['month', 'month_display']].drop_duplicates().sort_values('month', ascending=False)
-                    month_order = months['month_display'].tolist()
+                            row_idx = 0
+                            for category in category_order:
+                                # Get parties in this category
+                                cat_parties = [p for p in pivot_cn.index if party_category.get(p) == category]
 
-                    # Pivot tables
-                    pivot_cn2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='cn_count', aggfunc='sum', fill_value=0)
-                    pivot_qty2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='qty_total', aggfunc='sum', fill_value=0)
-                    pivot_amount2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='unbilled_amount', aggfunc='sum', fill_value=0)
+                                if not cat_parties:
+                                    continue
 
-                    # Reorder columns
-                    pivot_cn2 = pivot_cn2.reindex(columns=[m for m in month_order if m in pivot_cn2.columns])
-                    pivot_qty2 = pivot_qty2.reindex(columns=[m for m in month_order if m in pivot_qty2.columns])
-                    pivot_amount2 = pivot_amount2.reindex(columns=[m for m in month_order if m in pivot_amount2.columns])
+                                # Category totals
+                                cat_cn = {m: 0 for m in pivot_cn.columns}
+                                cat_qty = {m: 0 for m in pivot_cn.columns}
+                                cat_amount = {m: 0 for m in pivot_cn.columns}
 
-                    # Add category to pivot index
-                    party_category2 = pending_pod_df[['billing_party', 'category']].drop_duplicates().set_index('billing_party')['category']
+                                # Add party rows
+                                for party in sorted(cat_parties):
+                                    bg_color = '#1e293b' if row_idx % 2 == 0 else '#0f172a'
+                                    unbilled_html += f'<tr style="background: {bg_color}; color: white;">'
+                                    unbilled_html += f'<td style="padding: 8px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: {bg_color};">{party}</td>'
 
-                    # Category order
-                    category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
+                                    for month in pivot_cn.columns:
+                                        cn_count = int(pivot_cn.loc[party, month])
+                                        qty_count = int(pivot_qty.loc[party, month])
+                                        amount = pivot_amount.loc[party, month]
+                                        cat_cn[month] += cn_count
+                                        cat_qty[month] += qty_count
+                                        cat_amount[month] += amount
+                                        unbilled_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
+                                        unbilled_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
+                                        unbilled_html += f'<td style="padding: 8px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
 
-                    # Calculate totals for summary boxes
-                    total_cn_count2 = int(pending_pod_df['cn_count'].sum())
-                    total_qty2 = int(pending_pod_df['qty_total'].sum())
-                    total_unbilled_amount2 = pending_pod_df['unbilled_amount'].sum()
+                                    unbilled_html += "</tr>"
+                                    row_idx += 1
 
-                    # Layout: Summary on left, Table on right
-                    col_left2, col_right2 = st.columns([1, 4])
+                                # Add to grand totals
+                                for month in pivot_cn.columns:
+                                    grand_cn[month] += cat_cn[month]
+                                    grand_qty[month] += cat_qty[month]
+                                    grand_amount[month] += cat_amount[month]
 
-                    with col_left2:
-                        # Summary boxes
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
-                            <div style="color: #fecaca; font-size: 14px;">Total No. of CN</div>
-                            <div style="color: white; font-size: 32px; font-weight: bold;">{total_cn_count2:,}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                                # Category total row (gold) - only show if more than 1 party
+                                if len(cat_parties) > 1:
+                                    unbilled_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
+                                    unbilled_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
 
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
-                            <div style="color: #f3e8ff; font-size: 14px;">Total Qty</div>
-                            <div style="color: white; font-size: 32px; font-weight: bold;">{total_qty2:,}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                                    for month in pivot_cn.columns:
+                                        unbilled_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
+                                        unbilled_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
+                                        unbilled_html += f'<td style="padding: 10px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
 
-                        st.markdown(f"""
-                        <div style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 20px; border-radius: 10px; text-align: center;">
-                            <div style="color: #fed7aa; font-size: 14px;">Total Pending Amount</div>
-                            <div style="color: white; font-size: 32px; font-weight: bold;">₹{total_unbilled_amount2/100000:.2f}L</div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                                    unbilled_html += "</tr>"
 
-                    with col_right2:
-                        # Build HTML table with sticky header and first column
-                        pending_pod_html = """
-                        <div style="overflow: auto; max-width: 100%; max-height: 550px;">
-                        <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border: 1px solid #64748b;">
-                        <thead>
-                            <tr style="background: #7f1d1d; color: white;">
-                                <th rowspan="2" style="padding: 12px; text-align: left; border: 1px solid #64748b; min-width: 280px; vertical-align: middle; position: sticky; left: 0; top: 0; z-index: 3; background: #7f1d1d;">Billing Party</th>
-                        """
+                            # Grand total row (dark blue)
+                            unbilled_html += '<tr style="background: #1e3a5f; color: white; font-weight: bold;">'
+                            unbilled_html += '<td style="padding: 12px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #1e3a5f;">Grand Total</td>'
 
-                        for month in pivot_cn2.columns:
-                            pending_pod_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 1px solid #64748b; position: sticky; top: 0; z-index: 2; background: #7f1d1d;">{month}</th>'
+                            for month in pivot_cn.columns:
+                                unbilled_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_cn[month]}</td>'
+                                unbilled_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_qty[month]}</td>'
+                                unbilled_html += f'<td style="padding: 12px; text-align: right; border: 1px solid #64748b;">₹{grand_amount[month]:,.0f}</td>'
 
-                        pending_pod_html += """
-                            </tr>
+                            unbilled_html += "</tr></tbody></table></div>"
+
+                            components.html(unbilled_html, height=600, scrolling=True)
+
+                            # Download button - Raw CN data
+                            conn_download = get_db_connection()
+                            if conn_download is not None:
+                                raw_unbilled_query = """
+                                    SELECT cn_no, cn_date, billing_party, origin, route,
+                                           vehicle_no, qty, basic_freight, pod_receipt_no
+                                    FROM cn_data
+                                    WHERE (bill_no IS NULL OR bill_no = '')
+                                      AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
+                                      AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                                    ORDER BY cn_date DESC, billing_party
+                                """
+                                raw_unbilled_df = pd.read_sql_query(raw_unbilled_query, conn_download)
+                                conn_download.close()
+
+                                raw_unbilled_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
+                                                           'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No']
+                                unbilled_csv = raw_unbilled_df.to_csv(index=False)
+                                st.download_button(
+                                    label="📥 Download Unbilled CN Data",
+                                    data=unbilled_csv,
+                                    file_name=f"unbilled_cn_{datetime.now().strftime('%Y%m%d')}.csv",
+                                    mime="text/csv",
+                                    key="unbilled_cn_download"
+                                )
+                    else:
+                        st.success("No unbilled CNs found!")
+            except Exception as e:
+                st.error(f"Error loading unbilled CN data: {e}")
+
+            # Second table: Pending POD (bill_no blank, pod_receipt_no blank, ETA < D-4)
+            st.markdown("---")
+            st.markdown("### Unbilled CN - POD not Punch/Received")
+            st.caption("*CNs where Bill No is blank, POD Receipt No is blank, and ETA < D-4*")
+
+            try:
+                conn = get_db_connection()
+                if conn is not None:
+                    d_minus_4 = (datetime.now() - timedelta(days=4)).date()
+
+                    pending_pod_query = f"""
+                        SELECT billing_party,
+                               TO_CHAR(cn_date, 'YYYY-MM') as month,
+                               TO_CHAR(cn_date, 'Mon''YY') as month_display,
+                               COUNT(cn_no) as cn_count,
+                               SUM(qty) as qty_total,
+                               SUM(basic_freight) as unbilled_amount
+                        FROM cn_data
+                        WHERE (bill_no IS NULL OR bill_no = '')
+                          AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
+                          AND eta < '{d_minus_4}'
+                          AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                        GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
+                        ORDER BY billing_party, month DESC
+                    """
+                    pending_pod_df = pd.read_sql_query(pending_pod_query, conn)
+                    conn.close()
+
+                    if not pending_pod_df.empty:
+                        # Add category for grouping
+                        pending_pod_df['category'] = pending_pod_df['billing_party'].apply(get_client_category)
+
+                        # Get unique months for columns
+                        months = pending_pod_df[['month', 'month_display']].drop_duplicates().sort_values('month', ascending=False)
+                        month_order = months['month_display'].tolist()
+
+                        # Pivot tables
+                        pivot_cn2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='cn_count', aggfunc='sum', fill_value=0)
+                        pivot_qty2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='qty_total', aggfunc='sum', fill_value=0)
+                        pivot_amount2 = pending_pod_df.pivot_table(index='billing_party', columns='month_display', values='unbilled_amount', aggfunc='sum', fill_value=0)
+
+                        # Reorder columns
+                        pivot_cn2 = pivot_cn2.reindex(columns=[m for m in month_order if m in pivot_cn2.columns])
+                        pivot_qty2 = pivot_qty2.reindex(columns=[m for m in month_order if m in pivot_qty2.columns])
+                        pivot_amount2 = pivot_amount2.reindex(columns=[m for m in month_order if m in pivot_amount2.columns])
+
+                        # Add category to pivot index
+                        party_category2 = pending_pod_df[['billing_party', 'category']].drop_duplicates().set_index('billing_party')['category']
+
+                        # Category order
+                        category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
+
+                        # Calculate totals for summary boxes
+                        total_cn_count2 = int(pending_pod_df['cn_count'].sum())
+                        total_qty2 = int(pending_pod_df['qty_total'].sum())
+                        total_unbilled_amount2 = pending_pod_df['unbilled_amount'].sum()
+
+                        # Layout: Summary on left, Table on right
+                        col_left2, col_right2 = st.columns([1, 4])
+
+                        with col_left2:
+                            # Summary boxes
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
+                                <div style="color: #fecaca; font-size: 14px;">Total No. of CN</div>
+                                <div style="color: white; font-size: 32px; font-weight: bold;">{total_cn_count2:,}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%); padding: 20px; border-radius: 10px; text-align: center; margin-bottom: 15px;">
+                                <div style="color: #f3e8ff; font-size: 14px;">Total Qty</div>
+                                <div style="color: white; font-size: 32px; font-weight: bold;">{total_qty2:,}</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            st.markdown(f"""
+                            <div style="background: linear-gradient(135deg, #f97316 0%, #ea580c 100%); padding: 20px; border-radius: 10px; text-align: center;">
+                                <div style="color: #fed7aa; font-size: 14px;">Total Pending Amount</div>
+                                <div style="color: white; font-size: 32px; font-weight: bold;">₹{total_unbilled_amount2/100000:.2f}L</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        with col_right2:
+                            # Build HTML table with sticky header and first column
+                            pending_pod_html = """
+                            <div style="overflow: auto; max-width: 100%; max-height: 550px;">
+                            <table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border: 1px solid #64748b;">
+                            <thead>
+                                <tr style="background: #7f1d1d; color: white;">
+                                    <th rowspan="2" style="padding: 12px; text-align: left; border: 1px solid #64748b; min-width: 280px; vertical-align: middle; position: sticky; left: 0; top: 0; z-index: 3; background: #7f1d1d;">Billing Party</th>
+                            """
+
+                            for month in pivot_cn2.columns:
+                                pending_pod_html += f'<th colspan="3" style="padding: 12px; text-align: center; border: 1px solid #64748b; position: sticky; top: 0; z-index: 2; background: #7f1d1d;">{month}</th>'
+
+                            pending_pod_html += """
+                                </tr>
                             <tr style="background: #7f1d1d; color: #fecaca;">
                         """
 
-                        for month in pivot_cn2.columns:
-                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">No. of CN</th>'
-                            pending_pod_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">Qty</th>'
-                            pending_pod_html += '<th style="padding: 8px; text-align: right; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">Pending Amt</th>'
-
-                        pending_pod_html += "</tr></thead><tbody>"
-
-                        # Grand totals
-                        grand_cn2 = {m: 0 for m in pivot_cn2.columns}
-                        grand_qty2 = {m: 0 for m in pivot_cn2.columns}
-                        grand_amount2 = {m: 0 for m in pivot_cn2.columns}
-
-                        row_idx = 0
-                        for category in category_order:
-                            # Get parties in this category
-                            cat_parties = [p for p in pivot_cn2.index if party_category2.get(p) == category]
-
-                            if not cat_parties:
-                                continue
-
-                            # Category totals
-                            cat_cn = {m: 0 for m in pivot_cn2.columns}
-                            cat_qty = {m: 0 for m in pivot_cn2.columns}
-                            cat_amount = {m: 0 for m in pivot_cn2.columns}
-
-                            # Add party rows
-                            for party in sorted(cat_parties):
-                                bg_color = '#1e293b' if row_idx % 2 == 0 else '#0f172a'
-                                pending_pod_html += f'<tr style="background: {bg_color}; color: white;">'
-                                pending_pod_html += f'<td style="padding: 8px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: {bg_color};">{party}</td>'
-
-                                for month in pivot_cn2.columns:
-                                    cn_count = int(pivot_cn2.loc[party, month])
-                                    qty_count = int(pivot_qty2.loc[party, month])
-                                    amount = pivot_amount2.loc[party, month]
-                                    cat_cn[month] += cn_count
-                                    cat_qty[month] += qty_count
-                                    cat_amount[month] += amount
-                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 8px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
-
-                                pending_pod_html += "</tr>"
-                                row_idx += 1
-
-                            # Add to grand totals
                             for month in pivot_cn2.columns:
-                                grand_cn2[month] += cat_cn[month]
-                                grand_qty2[month] += cat_qty[month]
-                                grand_amount2[month] += cat_amount[month]
+                                pending_pod_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">No. of CN</th>'
+                                pending_pod_html += '<th style="padding: 8px; text-align: center; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">Qty</th>'
+                                pending_pod_html += '<th style="padding: 8px; text-align: right; border: 1px solid #64748b; position: sticky; top: 44px; z-index: 2; background: #7f1d1d;">Pending Amt</th>'
 
-                            # Category total row (gold) - only show if more than 1 party
-                            if len(cat_parties) > 1:
-                                pending_pod_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
-                                pending_pod_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
+                            pending_pod_html += "</tr></thead><tbody>"
 
+                            # Grand totals
+                            grand_cn2 = {m: 0 for m in pivot_cn2.columns}
+                            grand_qty2 = {m: 0 for m in pivot_cn2.columns}
+                            grand_amount2 = {m: 0 for m in pivot_cn2.columns}
+
+                            row_idx = 0
+                            for category in category_order:
+                                # Get parties in this category
+                                cat_parties = [p for p in pivot_cn2.index if party_category2.get(p) == category]
+
+                                if not cat_parties:
+                                    continue
+
+                                # Category totals
+                                cat_cn = {m: 0 for m in pivot_cn2.columns}
+                                cat_qty = {m: 0 for m in pivot_cn2.columns}
+                                cat_amount = {m: 0 for m in pivot_cn2.columns}
+
+                                # Add party rows
+                                for party in sorted(cat_parties):
+                                    bg_color = '#1e293b' if row_idx % 2 == 0 else '#0f172a'
+                                    pending_pod_html += f'<tr style="background: {bg_color}; color: white;">'
+                                    pending_pod_html += f'<td style="padding: 8px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: {bg_color};">{party}</td>'
+
+                                    for month in pivot_cn2.columns:
+                                        cn_count = int(pivot_cn2.loc[party, month])
+                                        qty_count = int(pivot_qty2.loc[party, month])
+                                        amount = pivot_amount2.loc[party, month]
+                                        cat_cn[month] += cn_count
+                                        cat_qty[month] += qty_count
+                                        cat_amount[month] += amount
+                                        pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{cn_count if cn_count > 0 else "-"}</td>'
+                                        pending_pod_html += f'<td style="padding: 8px; text-align: center; border: 1px solid #64748b;">{qty_count if qty_count > 0 else "-"}</td>'
+                                        pending_pod_html += f'<td style="padding: 8px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(amount) if amount > 0 else "-"}</td>'
+
+                                    pending_pod_html += "</tr>"
+                                    row_idx += 1
+
+                                # Add to grand totals
                                 for month in pivot_cn2.columns:
-                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
-                                    pending_pod_html += f'<td style="padding: 10px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
+                                    grand_cn2[month] += cat_cn[month]
+                                    grand_qty2[month] += cat_qty[month]
+                                    grand_amount2[month] += cat_amount[month]
 
-                                pending_pod_html += "</tr>"
+                                # Category total row (gold) - only show if more than 1 party
+                                if len(cat_parties) > 1:
+                                    pending_pod_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
+                                    pending_pod_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
 
-                        # Grand total row (dark red)
-                        pending_pod_html += '<tr style="background: #7f1d1d; color: white; font-weight: bold;">'
-                        pending_pod_html += '<td style="padding: 12px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #7f1d1d;">Grand Total</td>'
+                                    for month in pivot_cn2.columns:
+                                        pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_cn[month] if cat_cn[month] > 0 else "-"}</td>'
+                                        pending_pod_html += f'<td style="padding: 10px; text-align: center; border: 1px solid #64748b;">{cat_qty[month] if cat_qty[month] > 0 else "-"}</td>'
+                                        pending_pod_html += f'<td style="padding: 10px; text-align: right; border: 1px solid #64748b;">{"₹{:,.0f}".format(cat_amount[month]) if cat_amount[month] > 0 else "-"}</td>'
 
-                        for month in pivot_cn2.columns:
-                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_cn2[month]}</td>'
-                            pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_qty2[month]}</td>'
-                            pending_pod_html += f'<td style="padding: 12px; text-align: right; border: 1px solid #64748b;">₹{grand_amount2[month]:,.0f}</td>'
+                                    pending_pod_html += "</tr>"
 
-                        pending_pod_html += "</tr></tbody></table></div>"
+                            # Grand total row (dark red)
+                            pending_pod_html += '<tr style="background: #7f1d1d; color: white; font-weight: bold;">'
+                            pending_pod_html += '<td style="padding: 12px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #7f1d1d;">Grand Total</td>'
 
-                        components.html(pending_pod_html, height=600, scrolling=True)
+                            for month in pivot_cn2.columns:
+                                pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_cn2[month]}</td>'
+                                pending_pod_html += f'<td style="padding: 12px; text-align: center; border: 1px solid #64748b;">{grand_qty2[month]}</td>'
+                                pending_pod_html += f'<td style="padding: 12px; text-align: right; border: 1px solid #64748b;">₹{grand_amount2[month]:,.0f}</td>'
 
-                        # Download button - Raw CN data
-                        conn_download2 = get_db_connection()
-                        if conn_download2 is not None:
-                            raw_pending_pod_query = f"""
-                                SELECT cn_no, cn_date, billing_party, origin, route,
-                                       vehicle_no, qty, basic_freight, eta
-                                FROM cn_data
-                                WHERE (bill_no IS NULL OR bill_no = '')
-                                  AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
-                                  AND eta < '{d_minus_4}'
-                                  AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                                ORDER BY cn_date DESC, billing_party
-                            """
-                            raw_pending_pod_df = pd.read_sql_query(raw_pending_pod_query, conn_download2)
-                            conn_download2.close()
+                            pending_pod_html += "</tr></tbody></table></div>"
 
-                            raw_pending_pod_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
-                                                          'Vehicle No', 'Qty', 'Basic Freight', 'ETA']
-                            pending_pod_csv = raw_pending_pod_df.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Download Pending POD Data",
-                                data=pending_pod_csv,
-                                file_name=f"pending_pod_{datetime.now().strftime('%Y%m%d')}.csv",
-                                mime="text/csv",
-                                key="pending_pod_download"
-                            )
-                else:
-                    st.success("No pending POD CNs found!")
-        except Exception as e:
-            st.error(f"Error loading pending POD data: {e}")
+                            components.html(pending_pod_html, height=600, scrolling=True)
+
+                            # Download button - Raw CN data
+                            conn_download2 = get_db_connection()
+                            if conn_download2 is not None:
+                                raw_pending_pod_query = f"""
+                                    SELECT cn_no, cn_date, billing_party, origin, route,
+                                           vehicle_no, qty, basic_freight, eta
+                                    FROM cn_data
+                                    WHERE (bill_no IS NULL OR bill_no = '')
+                                      AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
+                                      AND eta < '{d_minus_4}'
+                                      AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                                    ORDER BY cn_date DESC, billing_party
+                                """
+                                raw_pending_pod_df = pd.read_sql_query(raw_pending_pod_query, conn_download2)
+                                conn_download2.close()
+
+                                raw_pending_pod_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
+                                                              'Vehicle No', 'Qty', 'Basic Freight', 'ETA']
+                                pending_pod_csv = raw_pending_pod_df.to_csv(index=False)
+                                st.download_button(
+                                    label="📥 Download Pending POD Data",
+                                    data=pending_pod_csv,
+                                    file_name=f"pending_pod_{datetime.now().strftime('%Y%m%d')}.csv",
+                                    mime="text/csv",
+                                    key="pending_pod_download"
+                                )
+                    else:
+                        st.success("No pending POD CNs found!")
+            except Exception as e:
+                st.error(f"Error loading pending POD data: {e}")
+
+        unbilled_cn_fragment()
 
 
 if __name__ == "__main__":
