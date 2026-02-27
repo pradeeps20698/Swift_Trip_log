@@ -1683,7 +1683,7 @@ def main():
                 return 'Unknown'
             city_upper = str(city).upper().strip()
 
-            # North Zone - Delhi NCR, Punjab, Haryana, Himachal, J&K, Uttarakhand, Rajasthan
+            # North Zone - Delhi NCR, Punjab, Haryana, Himachal, J&K, Uttarakhand, Rajasthan, Uttar Pradesh
             north_cities = ['DELHI', 'NOIDA', 'GURGAON', 'GURUGRAM', 'FARIDABAD', 'GHAZIABAD', 'GHAIZABAD', 'GREATER NOIDA',
                            'CHANDIGARH', 'MOHALI', 'PANCHKULA', 'LUDHIANA', 'JALANDHAR', 'JALLANDHAR', 'AMRITSAR', 'PATIALA',
                            'BATHINDA', 'BHATINDA', 'FIROZPUR', 'FEROZEPUR', 'HOSHIARPUR', 'MUKTSAR', 'SANGRUR',
@@ -1696,9 +1696,18 @@ def main():
                            'TAPUKERA', 'ICAT MANESAR', 'KHARKHODA', 'BILASPUR (HR)', 'YAMUNANAGAR', 'BHIWADI', 'WAZIRPUR',
                            'JAIPUR', 'JODHPUR', 'UDAIPUR', 'KOTA', 'AJMER', 'BIKANER', 'ALWAR', 'BHILWARA', 'KANKROLI',
                            'SIKAR', 'SRIGANGANAGAR', 'SRI GANGANAGAR', 'BHARATPUR', 'DAUSA', 'JHUNJHUNU', 'CHITTORGARH', 'TONK',
-                           'BANSWARA', 'NAGAUR', 'SAWAI MADHOPUR', 'JHALAWAR', 'NEEMUCH']
+                           'BANSWARA', 'NAGAUR', 'SAWAI MADHOPUR', 'JHALAWAR', 'NEEMUCH',
+                           # Uttar Pradesh
+                           'LUCKNOW', 'KANPUR', 'AGRA', 'VARANASI', 'ALLAHABAD', 'PRAYAGRAJ', 'GORAKHPUR',
+                           'BAREILLY', 'ALIGARH', 'MORADABAD', 'MEERUT', 'SAHARANPUR', 'MATHURA', 'FIROZABAD',
+                           'ETAWAH', 'ETAH', 'MAINPURI', 'SHAHJAHANPUR', 'SAHANJANPUR', 'SITAPUR', 'HARDOI',
+                           'UNNAO', 'RAE BAREILLY', 'RAEBARELI', 'RAI BARELI', 'SULTANPUR', 'FAIZABAD',
+                           'AZAMGARH', 'JAUNPUR', 'MIRZAPUR', 'ROBERTSGANJ', 'BASTI', 'GONDA', 'DEORIA',
+                           'BULANDSHAHAR', 'BIJNOR', 'MUZAFFARNAGAR', 'MUZAFFAR NAGAR', 'NAJIBABAD',
+                           'LAKHIMPUR', 'LAKHIMPUR KHERI', 'ORAI', 'JHANSI', 'FARRUKHABAD', 'PRATAPGARH',
+                           'ABOHAR', 'KUNDA', 'KHURJA', 'KARHAL', 'KARHAL(UP)', 'KOTVA SARAK']
 
-            # East Zone - West Bengal, Bihar, Jharkhand, Odisha, Assam, NE States
+            # East Zone - West Bengal, Bihar, Jharkhand, Odisha, Assam, NE States, Chhattisgarh
             east_cities = ['KOLKATA', 'HOWRAH', 'SILIGURI', 'ASANSOL', 'DURGAPUR', 'KHARAGPUR', 'MALDA',
                           'BARDHAMAN', 'BARDDHAMAN', 'BARDHMAN', 'BEHRAMPORE', 'BERHAMPORE', 'BEHRAMPUR', 'COOCHBEHAR', 'ALIPURDUAR',
                           'BUNIYADPUR', 'MOGRA', 'UPARNAGAR',
@@ -1711,9 +1720,11 @@ def main():
                           'BHUBANESHWAR', 'CUTTACK', 'ROURKELA', 'SAMBALPUR', 'BERHAMPUR', 'BRAHMAPUR',
                           'BALASORE', 'PURI', 'ANGUL', 'PANIKOILI', 'KEONJHAR', 'JEYPORE', 'JAYPORE',
                           'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON', 'NORTH LAKHIMPUR', 'SILCHAR',
-                          'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN', 'WEST CHAMPARAN', 'AGARTALA', 'IMPHAL', 'PORT BLAIR']
+                          'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN', 'WEST CHAMPARAN', 'AGARTALA', 'IMPHAL', 'PORT BLAIR',
+                          # Chhattisgarh
+                          'RAIPUR', 'BILASPUR', 'BHILAI', 'KORBA', 'RAJNANDGAON', 'DURG', 'JAGDALPUR', 'AMBIKAPUR', 'KANKER']
 
-            # West Zone - Maharashtra, Gujarat, Goa
+            # West Zone - Maharashtra, Gujarat, Goa, Madhya Pradesh
             west_cities = ['MUMBAI', 'PUNE', 'NASHIK', 'NAGPUR', 'AURANGABAD', 'AURNGABAD(MH)', 'AURANGABAD(MAHARASHTRA)',
                           'SOLAPUR', 'KOLHAPUR', 'SANGLI', 'SATARA', 'AHMEDNAGAR', 'THANE', 'NAVI MUMBAI',
                           'BHIWANDI', 'PANVEL', 'PANWEL', 'VASAI', 'KALYAN', 'RATNAGIRI', 'LATUR', 'BEED',
@@ -1724,7 +1735,13 @@ def main():
                           'ANKLESHWAR', 'GODHRA', 'DAHOD', 'HIMATNAGAR', 'HIMMATNAGAR', 'SURENDRANAGAR',
                           'PALANPUR', 'SANAND', 'BECHRAJI', 'HALOL', 'BARDOLI', 'CHHARODI', 'AMBLI', 'GANDHINAGAR',
                           'DHOLERA', 'PIPAVAV PORT', 'KHEDA(GJ)',
-                          'GOA', 'NUVEM']
+                          'GOA', 'NUVEM',
+                          # Madhya Pradesh
+                          'BHOPAL', 'INDORE', 'JABALPUR', 'GWALIOR', 'UJJAIN', 'RATLAM', 'DEWAS', 'SAGAR',
+                          'SATNA', 'REWA', 'KATNI', 'CHHINDWARA', 'CHINDWARA', 'KHANDWA', 'KHARGONE',
+                          'HOSHANGABAD', 'SEHORE', 'VIDISHA', 'SHAHDOL', 'SEONI', 'LAKHNADON', 'SHIVPURI',
+                          'GUNA', 'BIAORA', 'SHUJALPUR', 'SUJALPUR', 'CHHATARPUR', 'MAHOBA', 'WAIDHAN',
+                          'JHABUA', 'JABHUA', 'MAKSI', 'MAKSI(MP)']
 
             # South Zone - Karnataka, Tamil Nadu, Kerala, Andhra Pradesh, Telangana
             south_cities = ['BANGALORE', 'MYSORE', 'HUBLI', 'BELGAUM', 'BELGAON', 'MANGALORE', 'MANGLORE',
@@ -1746,23 +1763,6 @@ def main():
                            'WARANGAL', 'KARIMNAGAR', 'NIZAMABAD', 'KHAMMAM', 'NALGONDA', 'MAHBUBNAGAR',
                            'NIRMAL', 'ZAHEERABAD', 'ADONI']
 
-            # Central Zone - Madhya Pradesh, Chhattisgarh, UP (Central/East)
-            central_cities = ['BHOPAL', 'INDORE', 'JABALPUR', 'GWALIOR', 'UJJAIN', 'RATLAM', 'DEWAS', 'SAGAR',
-                             'SATNA', 'REWA', 'KATNI', 'CHHINDWARA', 'CHINDWARA', 'KHANDWA', 'KHARGONE',
-                             'HOSHANGABAD', 'SEHORE', 'VIDISHA', 'SHAHDOL', 'SEONI', 'LAKHNADON', 'SHIVPURI',
-                             'GUNA', 'BIAORA', 'SHUJALPUR', 'SUJALPUR', 'CHHATARPUR', 'MAHOBA', 'WAIDHAN',
-                             'JHABUA', 'JABHUA', 'NEEMUCH', 'MAKSI', 'MAKSI(MP)',
-                             'RAIPUR', 'BILASPUR', 'BHILAI', 'KORBA', 'RAJNANDGAON', 'DURG', 'JAGDALPUR',
-                             'AMBIKAPUR', 'KANKER',
-                             'LUCKNOW', 'KANPUR', 'AGRA', 'VARANASI', 'ALLAHABAD', 'PRAYAGRAJ', 'GORAKHPUR',
-                             'BAREILLY', 'ALIGARH', 'MORADABAD', 'MEERUT', 'SAHARANPUR', 'MATHURA', 'FIROZABAD',
-                             'ETAWAH', 'ETAH', 'MAINPURI', 'SHAHJAHANPUR', 'SAHANJANPUR', 'SITAPUR', 'HARDOI',
-                             'UNNAO', 'RAE BAREILLY', 'RAEBARELI', 'RAI BARELI', 'SULTANPUR', 'FAIZABAD',
-                             'AZAMGARH', 'JAUNPUR', 'MIRZAPUR', 'ROBERTSGANJ', 'BASTI', 'GONDA', 'DEORIA',
-                             'BULANDSHAHAR', 'BIJNOR', 'MUZAFFARNAGAR', 'MUZAFFAR NAGAR', 'NAJIBABAD',
-                             'LAKHIMPUR', 'LAKHIMPUR KHERI', 'ORAI', 'JHANSI', 'FARRUKHABAD', 'PRATAPGARH',
-                             'ABOHAR', 'KUNDA', 'KHURJA', 'KARHAL', 'KARHAL(UP)', 'KOTVA SARAK']
-
             # Check each zone
             for city_check in north_cities:
                 if city_check in city_upper or city_upper in city_check:
@@ -1779,10 +1779,6 @@ def main():
             for city_check in south_cities:
                 if city_check in city_upper or city_upper in city_check:
                     return 'South'
-
-            for city_check in central_cities:
-                if city_check in city_upper or city_upper in city_check:
-                    return 'Central'
 
             return 'Other'
 
@@ -1804,7 +1800,7 @@ def main():
             loaded_df['Dest_Zone'] = loaded_df['Destination'].apply(get_zone)
 
             # Create pivot tables (including Other for unmapped cities)
-            zones = ['Central', 'East', 'North', 'South', 'West']
+            zones = ['East', 'North', 'South', 'West']
 
             # Build the zone matrix for Cars Lifted
             cars_matrix = {}
