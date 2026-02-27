@@ -15,11 +15,48 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Auto-refresh every 10 minutes (600000 milliseconds)
+# Auto-refresh every 10 minutes (600000 milliseconds) with tab persistence
 components.html(
     """
     <script>
+        // Function to get current active tab index
+        function getCurrentTabIndex() {
+            const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+            for (let i = 0; i < tabs.length; i++) {
+                if (tabs[i].getAttribute('aria-selected') === 'true') {
+                    return i;
+                }
+            }
+            return 0;
+        }
+
+        // Function to click a tab by index
+        function clickTab(index) {
+            const tabs = window.parent.document.querySelectorAll('[data-baseweb="tab"]');
+            if (tabs[index]) {
+                tabs[index].click();
+            }
+        }
+
+        // On page load, restore the saved tab
+        const savedTab = localStorage.getItem('swift_dashboard_tab');
+        if (savedTab !== null) {
+            setTimeout(function() {
+                clickTab(parseInt(savedTab));
+            }, 500);
+        }
+
+        // Save current tab every second (to capture tab changes)
+        setInterval(function() {
+            const currentTab = getCurrentTabIndex();
+            localStorage.setItem('swift_dashboard_tab', currentTab);
+        }, 1000);
+
+        // Auto-refresh after 10 minutes
         setTimeout(function(){
+            // Save current tab before refresh
+            const currentTab = getCurrentTabIndex();
+            localStorage.setItem('swift_dashboard_tab', currentTab);
             window.parent.location.reload();
         }, 600000);
     </script>
