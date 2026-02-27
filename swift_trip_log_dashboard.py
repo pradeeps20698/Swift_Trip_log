@@ -1434,13 +1434,18 @@ def main():
             haridwar_vehicles = load_vehicles_by_type('TR_HRD_LCL')
             gujarat_vehicles = load_vehicles_by_type('TR_Gujarat_LCL')
             nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
+            patna_vehicles = load_vehicles_by_type('TR_Patna_LCL_4018 BS6')
+            road_pilot_vehicles = load_vehicles_by_type('Road Pilot')
 
             # Create filter functions for each category (using pre-loaded vehicle lists)
             def get_toyota_local(data):
                 return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
 
             def get_patna_local(data):
-                return data[data['NewPartyName'].str.contains('MAHINDRA LOGISTICS LTD.*Train Load', case=False, na=False, regex=True)]
+                if not patna_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in patna_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_haridwar_local(data):
                 if not haridwar_vehicles:
@@ -1449,7 +1454,10 @@ def main():
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_road_pilot(data):
-                return data[data['DriverName'].str.contains('road pilot', case=False, na=False)]
+                if not road_pilot_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in road_pilot_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_kia_local(data):
                 if not kia_vehicles:
@@ -1492,16 +1500,29 @@ def main():
             gujarat_local = get_gujarat_local(loaded_month_df)
             nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
 
-            # Summary data for all categories
+            # Summary data for all categories (including unique vehicle count)
+            def get_summary(df, category_name):
+                vehicles = df['VehicleNo'].nunique() if len(df) > 0 else 0
+                freight = df['Freight'].sum()
+                avg_freight = freight / vehicles if vehicles > 0 else 0
+                return {
+                    'Category': category_name,
+                    'Trips': len(df),
+                    'Cars': int(df['CarQty'].sum()),
+                    'Vehicles': vehicles,
+                    'Freight': freight,
+                    'AvgFreight': avg_freight
+                }
+
             summary_data = [
-                {'Category': 'Toyota Local', 'Trips': len(toyota_local), 'Cars': int(toyota_local['CarQty'].sum()), 'Freight': toyota_local['Freight'].sum()},
-                {'Category': 'Patna Local', 'Trips': len(patna_local), 'Cars': int(patna_local['CarQty'].sum()), 'Freight': patna_local['Freight'].sum()},
-                {'Category': 'Haridwar Local', 'Trips': len(haridwar_local), 'Cars': int(haridwar_local['CarQty'].sum()), 'Freight': haridwar_local['Freight'].sum()},
-                {'Category': 'Road Pilot', 'Trips': len(road_pilot), 'Cars': int(road_pilot['CarQty'].sum()), 'Freight': road_pilot['Freight'].sum()},
-                {'Category': 'Kia Local', 'Trips': len(kia_local), 'Cars': int(kia_local['CarQty'].sum()), 'Freight': kia_local['Freight'].sum()},
-                {'Category': 'Kia AP Passing', 'Trips': len(kia_ap_passing), 'Cars': int(kia_ap_passing['CarQty'].sum()), 'Freight': kia_ap_passing['Freight'].sum()},
-                {'Category': 'Gujarat Local', 'Trips': len(gujarat_local), 'Cars': int(gujarat_local['CarQty'].sum()), 'Freight': gujarat_local['Freight'].sum()},
-                {'Category': 'NSK/Ckn-north dedicated', 'Trips': len(nsk_ckn_local), 'Cars': int(nsk_ckn_local['CarQty'].sum()), 'Freight': nsk_ckn_local['Freight'].sum()},
+                get_summary(toyota_local, 'Toyota Local'),
+                get_summary(patna_local, 'Patna Local'),
+                get_summary(haridwar_local, 'Haridwar Local'),
+                get_summary(road_pilot, 'Road Pilot'),
+                get_summary(kia_local, 'Kia Local'),
+                get_summary(kia_ap_passing, 'Kia AP Passing'),
+                get_summary(gujarat_local, 'Gujarat Local'),
+                get_summary(nsk_ckn_local, 'NSK/Ckn-north dedicated'),
             ]
 
             # Summary Section
@@ -1522,32 +1543,42 @@ def main():
                         <th>Category</th>
                         <th>Total Trips</th>
                         <th>Cars Lifted</th>
+                        <th>No. of Vehicles</th>
                         <th>Freight</th>
+                        <th>Avg Freight</th>
                     </tr>
                 </thead>
                 <tbody>
             """
             total_trips = 0
             total_cars = 0
+            total_vehicles = 0
             total_freight = 0
             for item in summary_data:
                 total_trips += item['Trips']
                 total_cars += item['Cars']
+                total_vehicles += item['Vehicles']
                 total_freight += item['Freight']
                 summary_html += f"""
                     <tr>
                         <td style="text-align: left; font-weight: bold;">{item['Category']}</td>
                         <td>{item['Trips']}</td>
                         <td>{item['Cars']}</td>
+                        <td>{item['Vehicles']}</td>
                         <td>₹{item['Freight']/100000:.2f}L</td>
+                        <td>₹{item['AvgFreight']/100000:.2f}L</td>
                     </tr>
                 """
+            # Calculate grand total avg freight
+            grand_avg_freight = total_freight / total_vehicles if total_vehicles > 0 else 0
             summary_html += f"""
                     <tr class="total-row">
                         <td style="text-align: left;">Grand Total</td>
                         <td style="color: #fbbf24;">{total_trips}</td>
                         <td style="color: #fbbf24;">{total_cars}</td>
+                        <td style="color: #fbbf24;">{total_vehicles}</td>
                         <td style="color: #fbbf24;">₹{total_freight/100000:.2f}L</td>
+                        <td style="color: #fbbf24;">₹{grand_avg_freight/100000:.2f}L</td>
                     </tr>
                 </tbody>
             </table>
