@@ -2304,6 +2304,112 @@ def main():
 
         pending_cn_fragment()
 
+        # CN Aging Branch-wise Section
+        st.markdown("---")
+        st.markdown("### CN Aging - Branch Wise")
+        st.caption("*Aging calculated as Loading Date - CN Date (for CNs with Trip Log mapped)*")
+
+        @st.fragment(run_every=REFRESH_10_MIN)
+        def cn_aging_fragment():
+            try:
+                conn = get_db_connection()
+                if conn is not None:
+                    # Query cn_data where tl_no is not blank, joined with swift_trip_log for loading_date
+                    aging_query = """
+                        SELECT
+                            c.origin as branch,
+                            c.cn_no,
+                            c.cn_date,
+                            c.tl_no,
+                            t.loading_date,
+                            t.loading_date::date - c.cn_date::date as aging_days
+                        FROM cn_data c
+                        INNER JOIN swift_trip_log t ON c.tl_no = t.tlhs_no
+                        WHERE c.tl_no IS NOT NULL
+                          AND c.tl_no != ''
+                          AND c.cn_date IS NOT NULL
+                          AND t.loading_date IS NOT NULL
+                    """
+                    aging_df = pd.read_sql_query(aging_query, conn)
+                    conn.close()
+
+                    if len(aging_df) > 0:
+                        # Group by branch and calculate statistics
+                        branch_aging = aging_df.groupby('branch').agg({
+                            'cn_no': 'count',
+                            'aging_days': ['min', 'max', 'mean']
+                        }).reset_index()
+                        branch_aging.columns = ['Branch', 'CN Count', 'Min Days', 'Max Days', 'Avg Days']
+                        branch_aging['Avg Days'] = branch_aging['Avg Days'].round(1)
+                        branch_aging = branch_aging.sort_values('CN Count', ascending=False)
+
+                        # Calculate totals
+                        total_cn = branch_aging['CN Count'].sum()
+                        overall_min = branch_aging['Min Days'].min()
+                        overall_max = branch_aging['Max Days'].max()
+                        overall_avg = aging_df['aging_days'].mean().round(1)
+
+                        # Build HTML table
+                        aging_html = """
+                        <style>
+                            .aging-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+                            .aging-table th { background-color: #1e3a5f; color: white; padding: 10px; text-align: center; border: 1px solid #3b82f6; }
+                            .aging-table td { padding: 8px 10px; border: 1px solid #2d3748; color: white; text-align: center; }
+                            .aging-table tr:nth-child(even) { background-color: #1a1f2e; }
+                            .aging-table tr:nth-child(odd) { background-color: #0e1117; }
+                            .aging-table .total-row { background-color: #1e40af !important; font-weight: bold; }
+                            .aging-table .branch-col { text-align: left; font-weight: bold; }
+                            .aging-table .high-aging { color: #f87171; }
+                            .aging-table .low-aging { color: #34d399; }
+                        </style>
+                        <table class="aging-table">
+                            <thead>
+                                <tr>
+                                    <th style="text-align: left;">Branch (Origin)</th>
+                                    <th>CN Count</th>
+                                    <th>Min Days</th>
+                                    <th>Max Days</th>
+                                    <th>Avg Days</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                        """
+
+                        for _, row in branch_aging.iterrows():
+                            avg_class = 'high-aging' if row['Avg Days'] > 5 else 'low-aging' if row['Avg Days'] <= 2 else ''
+                            aging_html += f"""
+                                <tr>
+                                    <td class="branch-col">{row['Branch']}</td>
+                                    <td>{int(row['CN Count'])}</td>
+                                    <td>{int(row['Min Days'])}</td>
+                                    <td>{int(row['Max Days'])}</td>
+                                    <td class="{avg_class}">{row['Avg Days']}</td>
+                                </tr>
+                            """
+
+                        # Total row
+                        total_avg_class = 'high-aging' if overall_avg > 5 else 'low-aging' if overall_avg <= 2 else ''
+                        aging_html += f"""
+                            <tr class="total-row">
+                                <td class="branch-col">Grand Total</td>
+                                <td>{int(total_cn)}</td>
+                                <td>{int(overall_min)}</td>
+                                <td>{int(overall_max)}</td>
+                                <td class="{total_avg_class}">{overall_avg}</td>
+                            </tr>
+                        </tbody></table>
+                        """
+
+                        components.html(aging_html, height=min(len(branch_aging) * 40 + 80, 500), scrolling=True)
+                    else:
+                        st.info("No CN records found with Trip Log mapping.")
+                else:
+                    st.warning("Could not connect to database.")
+            except Exception as e:
+                st.error(f"Error loading CN aging data: {e}")
+
+        cn_aging_fragment()
+
     with tab6:
         st.markdown("### Unbilled CN - POD Received")
         st.caption("*CNs where Bill No is blank but POD Receipt No exists - grouped by Category and Month*")
