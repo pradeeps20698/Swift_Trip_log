@@ -1893,6 +1893,39 @@ def main():
                 trips_html = build_zone_table(trips_matrix, "", max_trips, actual_total_trips)
                 components.html(trips_html, height=280)
 
+            # Zone Legend - States mapped to each zone
+            with st.expander("Zone Mapping (States)", expanded=False):
+                zone_legend_html = """
+                <style>
+                    .zone-legend { font-size: 13px; color: white; }
+                    .zone-legend table { width: 100%; border-collapse: collapse; }
+                    .zone-legend td { padding: 8px 12px; border-bottom: 1px solid #2d3748; vertical-align: top; }
+                    .zone-legend .zone-name { font-weight: bold; color: #3b82f6; width: 80px; }
+                    .zone-legend .states { color: #d1d5db; }
+                </style>
+                <div class="zone-legend">
+                    <table>
+                        <tr>
+                            <td class="zone-name">North</td>
+                            <td class="states">Delhi NCR, Punjab, Haryana, Himachal Pradesh, J&K, Uttarakhand, Rajasthan, Uttar Pradesh</td>
+                        </tr>
+                        <tr>
+                            <td class="zone-name">East</td>
+                            <td class="states">West Bengal, Bihar, Jharkhand, Odisha, Assam, NE States, Chhattisgarh</td>
+                        </tr>
+                        <tr>
+                            <td class="zone-name">West</td>
+                            <td class="states">Maharashtra, Gujarat, Goa, Madhya Pradesh</td>
+                        </tr>
+                        <tr>
+                            <td class="zone-name">South</td>
+                            <td class="states">Karnataka, Tamil Nadu, Kerala, Andhra Pradesh, Telangana</td>
+                        </tr>
+                    </table>
+                </div>
+                """
+                components.html(zone_legend_html, height=180)
+
             # Vendor Zone Tables
             st.markdown("---")
             st.markdown("#### Vendor Zone View")
