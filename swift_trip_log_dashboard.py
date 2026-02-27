@@ -2307,7 +2307,7 @@ def main():
         # CN Aging Branch-wise Section
         st.markdown("---")
         st.markdown("### CN Aging - Branch Wise")
-        st.caption("*Aging calculated as Loading Date - CN Date (for CNs with Trip Log mapped)*")
+        st.caption("*Aging calculated as CN Date - Loading Date (for CNs with Trip Log mapped)*")
 
         @st.fragment(run_every=REFRESH_10_MIN)
         def cn_aging_fragment():
@@ -2322,7 +2322,7 @@ def main():
                             c.cn_date,
                             c.tl_no,
                             t.loading_date,
-                            t.loading_date::date - c.cn_date::date as aging_days
+                            c.cn_date::date - t.loading_date::date as aging_days
                         FROM cn_data c
                         INNER JOIN swift_trip_log t ON c.tl_no = t.tlhs_no
                         WHERE c.tl_no IS NOT NULL
