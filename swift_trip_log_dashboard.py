@@ -2568,8 +2568,8 @@ def main():
                                     grand_qty[month] += cat_qty[month]
                                     grand_amount[month] += cat_amount[month]
 
-                                # Category total row (gold) - only show if more than 1 party
-                                if len(cat_parties) > 1:
+                                # Category total row (gold) - only show if more than 1 party (exclude Other)
+                                if len(cat_parties) > 1 and category != 'Other':
                                     unbilled_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
                                     unbilled_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
 
@@ -2788,8 +2788,8 @@ def main():
                                     grand_qty2[month] += cat_qty[month]
                                     grand_amount2[month] += cat_amount[month]
 
-                                # Category total row (gold) - only show if more than 1 party
-                                if len(cat_parties) > 1:
+                                # Category total row (gold) - only show if more than 1 party (exclude Other)
+                                if len(cat_parties) > 1 and category != 'Other':
                                     pending_pod_html += f'<tr style="background: #b8860b; color: white; font-weight: bold;">'
                                     pending_pod_html += f'<td style="padding: 10px; border: 1px solid #64748b; position: sticky; left: 0; z-index: 1; background: #b8860b;">{category} - Total</td>'
 
