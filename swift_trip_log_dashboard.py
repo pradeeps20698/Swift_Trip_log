@@ -2516,8 +2516,21 @@ def main():
                             grand_qty = {m: 0 for m in pivot_cn.columns}
                             grand_amount = {m: 0 for m in pivot_cn.columns}
 
-                            row_idx = 0
+                            # Separate categories with multiple parties (grouped) vs single parties
+                            grouped_categories = []
+                            single_categories = []
                             for category in category_order:
+                                cat_parties = [p for p in pivot_cn.index if party_category.get(p) == category]
+                                if len(cat_parties) > 1:
+                                    grouped_categories.append(category)
+                                elif len(cat_parties) == 1:
+                                    single_categories.append(category)
+
+                            # Reorder: grouped categories first, then single categories
+                            reordered_categories = grouped_categories + single_categories
+
+                            row_idx = 0
+                            for category in reordered_categories:
                                 # Get parties in this category
                                 cat_parties = [p for p in pivot_cn.index if party_category.get(p) == category]
 
@@ -2723,8 +2736,21 @@ def main():
                             grand_qty2 = {m: 0 for m in pivot_cn2.columns}
                             grand_amount2 = {m: 0 for m in pivot_cn2.columns}
 
-                            row_idx = 0
+                            # Separate categories with multiple parties (grouped) vs single parties
+                            grouped_categories2 = []
+                            single_categories2 = []
                             for category in category_order:
+                                cat_parties = [p for p in pivot_cn2.index if party_category2.get(p) == category]
+                                if len(cat_parties) > 1:
+                                    grouped_categories2.append(category)
+                                elif len(cat_parties) == 1:
+                                    single_categories2.append(category)
+
+                            # Reorder: grouped categories first, then single categories
+                            reordered_categories2 = grouped_categories2 + single_categories2
+
+                            row_idx = 0
+                            for category in reordered_categories2:
                                 # Get parties in this category
                                 cat_parties = [p for p in pivot_cn2.index if party_category2.get(p) == category]
 
