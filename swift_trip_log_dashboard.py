@@ -2598,7 +2598,7 @@ def main():
                             if conn_download is not None:
                                 raw_unbilled_query = """
                                     SELECT cn_no, cn_date, billing_party, origin, route,
-                                           vehicle_no, qty, basic_freight, pod_receipt_no
+                                           vehicle_no, qty, basic_freight, pod_receipt_no, tl_no
                                     FROM cn_data
                                     WHERE (bill_no IS NULL OR bill_no = '')
                                       AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
@@ -2609,7 +2609,7 @@ def main():
                                 conn_download.close()
 
                                 raw_unbilled_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
-                                                           'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No']
+                                                           'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No', 'TL No']
                                 unbilled_csv = raw_unbilled_df.to_csv(index=False)
                                 st.download_button(
                                     label="📥 Download Unbilled CN Data",
@@ -2818,7 +2818,7 @@ def main():
                             if conn_download2 is not None:
                                 raw_pending_pod_query = f"""
                                     SELECT cn_no, cn_date, billing_party, origin, route,
-                                           vehicle_no, qty, basic_freight, eta
+                                           vehicle_no, qty, basic_freight, eta, tl_no
                                     FROM cn_data
                                     WHERE (bill_no IS NULL OR bill_no = '')
                                       AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
@@ -2830,7 +2830,7 @@ def main():
                                 conn_download2.close()
 
                                 raw_pending_pod_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
-                                                              'Vehicle No', 'Qty', 'Basic Freight', 'ETA']
+                                                              'Vehicle No', 'Qty', 'Basic Freight', 'ETA', 'TL No']
                                 pending_pod_csv = raw_pending_pod_df.to_csv(index=False)
                                 st.download_button(
                                     label="📥 Download Pending POD Data",
