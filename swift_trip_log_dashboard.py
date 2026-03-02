@@ -2127,12 +2127,19 @@ def main():
             # Load excluded trips from database
             excluded_trips = load_excluded_trips()
 
+            # For Pending CN: Include both last month and current month data
+            last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+            pending_data = df[
+                (df['LoadingDateOnly'] >= last_month_start.date()) &
+                (df['LoadingDateOnly'] <= month_end.date())
+            ].copy()
+
             # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
-            pending_cn_df = month_df[
-                (month_df['TripStatus'] == 'Loaded') &
-                ((month_df['LRNos'].isna()) | (month_df['LRNos'] == '') | (month_df['LRNos'].str.strip() == '')) &
-                (month_df['LoadingDate'].dt.date <= d_minus_3) &
-                (~month_df['TLHSNo'].isin(excluded_trips))
+            pending_cn_df = pending_data[
+                (pending_data['TripStatus'] == 'Loaded') &
+                ((pending_data['LRNos'].isna()) | (pending_data['LRNos'] == '') | (pending_data['LRNos'].str.strip() == '')) &
+                (pending_data['LoadingDate'].dt.date <= d_minus_3) &
+                (~pending_data['TLHSNo'].isin(excluded_trips))
             ].copy()
 
             # Cross-check with cn_data to exclude trips that have CN records
