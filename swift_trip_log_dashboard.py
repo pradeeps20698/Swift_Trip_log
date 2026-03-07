@@ -158,6 +158,7 @@ def load_vendor_data():
             WHERE ((billing_party = 'R.sai Logistics India Pvt. Ltd.' AND tl_no IS NULL)
                OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle'))
                AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+               AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -2152,6 +2153,7 @@ def main():
                             SELECT DISTINCT cn_date, vehicle_no
                             FROM cn_data
                             WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
+                              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                         """
                         cn_records = pd.read_sql_query(cn_query, conn)
 
@@ -2163,6 +2165,7 @@ def main():
                               AND vehicle_type = 'Own Vehicle'
                               AND route IS NOT NULL AND route != ''
                               AND vehicle_no IS NOT NULL AND vehicle_no != ''
+                              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                         """
                         own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
                         conn.close()
@@ -2340,6 +2343,7 @@ def main():
                           AND t.loading_date IS NOT NULL
                           AND c.cn_date::date >= '{last_7_days}'
                           AND c.cn_date::date >= t.loading_date::date
+                          AND NOT (c.billing_party = 'Ranjeet Singh Logistics' AND c.basic_freight = 65000)
                     """
                     aging_df = pd.read_sql_query(aging_query, conn)
                     conn.close()
@@ -2425,6 +2429,7 @@ def main():
                         WHERE (bill_no IS NULL OR bill_no = '')
                           AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
                           AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                          AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                         GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
                         ORDER BY billing_party, month DESC
                     """
@@ -2603,6 +2608,7 @@ def main():
                                     WHERE (bill_no IS NULL OR bill_no = '')
                                       AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
                                       AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                                      AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                                     ORDER BY cn_date DESC, billing_party
                                 """
                                 raw_unbilled_df = pd.read_sql_query(raw_unbilled_query, conn_download)
@@ -2645,6 +2651,7 @@ def main():
                           AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
                           AND eta < '{d_minus_4}'
                           AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                          AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                         GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
                         ORDER BY billing_party, month DESC
                     """
@@ -2824,6 +2831,7 @@ def main():
                                       AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
                                       AND eta < '{d_minus_4}'
                                       AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+                                      AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                                     ORDER BY cn_date DESC, billing_party
                                 """
                                 raw_pending_pod_df = pd.read_sql_query(raw_pending_pod_query, conn_download2)
