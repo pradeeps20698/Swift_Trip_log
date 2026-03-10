@@ -557,9 +557,10 @@ def main():
 
     # Select Month
     st.sidebar.subheader("Select Month")
-    # Filter valid dates: not null, not future dates
+    # Filter valid dates: not null, not future dates, from Apr'25 onwards
     valid_dates = df['LoadingDate'].dropna()
     valid_dates = valid_dates[valid_dates <= pd.Timestamp.now()]
+    valid_dates = valid_dates[valid_dates >= pd.Timestamp('2025-04-01')]  # Only show from Apr'25
     available_months = valid_dates.dt.to_period('M').unique()
     available_months = sorted([str(m) for m in available_months], reverse=True)
 
