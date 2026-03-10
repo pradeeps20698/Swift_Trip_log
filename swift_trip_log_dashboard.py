@@ -25,6 +25,20 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
 <style>
+    /* Hide the blur/dim effect when app is rerunning */
+    [data-testid="stAppViewBlockContainer"] {
+        opacity: 1 !important;
+    }
+    .stApp > div:first-child {
+        opacity: 1 !important;
+    }
+    [data-testid="stStatusWidget"] {
+        display: none !important;
+    }
+    .stSpinner {
+        display: none !important;
+    }
+
     .metric-card-blue {
         background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
         padding: 1.5rem;
