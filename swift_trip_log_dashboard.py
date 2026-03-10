@@ -103,7 +103,11 @@ def load_triplog_data():
         if conn is None:
             return pd.DataFrame()
 
-        query = "SELECT * FROM swift_trip_log"
+        query = """
+            SELECT * FROM swift_trip_log
+            WHERE loading_date IS NOT NULL
+              AND loading_date <= CURRENT_DATE
+        """
         df = pd.read_sql_query(query, conn)
         conn.close()
 
@@ -195,6 +199,34 @@ def load_vendor_data():
         return df
     except Exception as e:
         st.error(f"Error loading vendor data from database: {e}")
+        return pd.DataFrame()
+
+
+def load_cn_data():
+    """Load ALL cn_data for use in fragments (cn_aging, unbilled_cn, etc.)"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return pd.DataFrame()
+
+        # Load all cn_data with columns needed by various fragments
+        query = """
+            SELECT cn_no, cn_date, billing_party, origin, route, vehicle_no,
+                   qty, basic_freight, tl_no, branch, bill_no, pod_receipt_no,
+                   eta, vehicle_type
+            FROM cn_data
+            WHERE (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
+              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        # Convert date columns
+        df['cn_date'] = pd.to_datetime(df['cn_date'], errors='coerce')
+
+        return df
+    except Exception as e:
+        st.error(f"Error loading cn_data from database: {e}")
         return pd.DataFrame()
 
 
@@ -428,9 +460,8 @@ def get_client_category(party_name):
         return "Other"
 
 
-@st.cache_data(ttl=300)
 def load_and_process_data():
-    """Load and process all data - cached to avoid reprocessing on filter changes"""
+    """Load and process all data from database"""
     df = load_triplog_data()
     vendor_df = load_vendor_data()
 
@@ -461,22 +492,61 @@ def load_and_process_data():
     # Add client category based on DisplayParty
     df['category'] = df['DisplayParty'].apply(get_client_category)
 
+    # Pre-compute LoadingDateOnly for faster filtering
+    df['LoadingDateOnly'] = df['LoadingDate'].dt.date
+
     return df, vendor_df
+
+
+def refresh_session_data():
+    """Refresh session_state data from database - only if 10 minutes have passed"""
+    # Only refresh if 10 minutes have passed since last refresh
+    if 'last_data_refresh' in st.session_state:
+        time_since_refresh = (datetime.now() - st.session_state.last_data_refresh).total_seconds()
+        if time_since_refresh < 600:  # Less than 10 minutes - use stored data
+            return st.session_state.df, st.session_state.vendor_df, st.session_state.cn_data, st.session_state.targets
+
+    # 10 minutes passed OR first load - refresh from database
+    df, vendor_df = load_and_process_data()
+    cn_data = load_cn_data()
+    st.session_state.df = df
+    st.session_state.vendor_df = vendor_df
+    st.session_state.cn_data = cn_data
+    st.session_state.targets = load_targets()
+    st.session_state.last_data_refresh = datetime.now()
+    return df, vendor_df, cn_data, st.session_state.targets
 
 
 def main():
     # Header
     st.markdown("<h1 style='text-align: center;'>🚚 Swift Trip Log Dashboard</h1>", unsafe_allow_html=True)
 
-    # Load data - only show spinner on first load
-    if 'data_loaded' not in st.session_state:
-        with st.spinner("Loading data..."):
-            df, vendor_df = load_and_process_data()
-            st.session_state.data_loaded = True
-    else:
-        df, vendor_df = load_and_process_data()
+    # ========== AUTO-REFRESH EVERY 10 MINUTES ==========
+    # Check if 10 minutes have passed since last data load
+    if 'last_data_refresh' in st.session_state:
+        time_since_refresh = (datetime.now() - st.session_state.last_data_refresh).total_seconds()
+        if time_since_refresh > 600:  # 600 seconds = 10 minutes
+            # Clear stored data to trigger reload
+            for key in ['df', 'vendor_df', 'cn_data', 'targets']:
+                if key in st.session_state:
+                    del st.session_state[key]
 
-    targets = load_targets()
+    # ========== STORE ALL DATA IN SESSION_STATE ==========
+    if 'df' not in st.session_state:
+        with st.spinner("Loading data from database..."):
+            df, vendor_df = load_and_process_data()
+            cn_data = load_cn_data()
+            st.session_state.df = df
+            st.session_state.vendor_df = vendor_df
+            st.session_state.cn_data = cn_data
+            st.session_state.targets = load_targets()
+            st.session_state.last_data_refresh = datetime.now()  # Track refresh time
+
+    # Use data from session_state - INSTANT, no database call
+    df = st.session_state.df
+    vendor_df = st.session_state.vendor_df
+    cn_data = st.session_state.cn_data
+    targets = st.session_state.targets
 
     if df.empty:
         st.error("No data available. Please check the database connection.")
@@ -487,7 +557,10 @@ def main():
 
     # Select Month
     st.sidebar.subheader("Select Month")
-    available_months = df['LoadingDate'].dt.to_period('M').dropna().unique()
+    # Filter valid dates: not null, not future dates
+    valid_dates = df['LoadingDate'].dropna()
+    valid_dates = valid_dates[valid_dates <= pd.Timestamp.now()]
+    available_months = valid_dates.dt.to_period('M').unique()
     available_months = sorted([str(m) for m in available_months], reverse=True)
 
     if available_months:
@@ -503,10 +576,13 @@ def main():
     all_parties = ['All'] + sorted(df['DisplayParty'].dropna().unique().tolist())
     selected_party = st.sidebar.selectbox("Party", all_parties)
 
-    # Refresh button
+    # Refresh button - clears session_state to reload from database
     if st.sidebar.button("🔄 Refresh Data"):
         st.cache_data.clear()
-        st.session_state.data_loaded = False
+        # Clear stored data so it reloads from database
+        for key in ['df', 'vendor_df', 'cn_data', 'targets', 'last_data_refresh']:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
 
     # Target SOB Update Section
@@ -529,6 +605,8 @@ def main():
                 if save_target(target_party, new_target):
                     st.success(f"Target saved for {target_party}: {new_target}")
                     st.cache_data.clear()
+                    # Reload targets in session_state
+                    st.session_state.targets = load_targets()
                     st.rerun()
 
         # Show current targets
@@ -576,9 +654,6 @@ def main():
     month_start = selected_month.replace(day=1)
     month_end = (month_start + relativedelta(months=1)) - timedelta(days=1)
 
-    # Convert to date only for accurate comparison
-    df['LoadingDateOnly'] = df['LoadingDate'].dt.date
-
     # Full month data for summary boxes (all available data for the month)
     month_df = df[(df['LoadingDateOnly'] >= month_start.date()) & (df['LoadingDateOnly'] <= month_end.date())]
 
@@ -588,22 +663,32 @@ def main():
     # Month Summary Section (Full Month - Live Data) - Auto refresh every 10 minutes
     @st.fragment(run_every=REFRESH_10_MIN)
     def month_summary_fragment():
+        # Auto-refresh: reload data from database and update session_state
+        refresh_session_data()
+        frag_df = st.session_state.df
+        frag_vendor_df = st.session_state.vendor_df
+
+        # Re-filter for selected month and party
+        frag_month_df = frag_df[(frag_df['LoadingDateOnly'] >= month_start.date()) & (frag_df['LoadingDateOnly'] <= month_end.date())]
+        if selected_party != 'All':
+            frag_month_df = frag_month_df[frag_month_df['DisplayParty'] == selected_party]
+
         st.markdown(f"### Month Summary ({selected_month.strftime('%B %Y')})")
 
         # Calculate Own metrics
-        loaded_trips = len(month_df[(month_df['TripStatus'] != 'Empty') & (month_df['DisplayParty'] != '') & (month_df['DisplayParty'].notna())])
-        empty_trips = len(month_df[(month_df['TripStatus'] == 'Empty') | (month_df['DisplayParty'] == '') | (month_df['DisplayParty'].isna())])
-        own_cars = int(month_df['CarQty'].sum())
-        own_freight = month_df['Freight'].sum()
+        loaded_trips = len(frag_month_df[(frag_month_df['TripStatus'] != 'Empty') & (frag_month_df['DisplayParty'] != '') & (frag_month_df['DisplayParty'].notna())])
+        empty_trips = len(frag_month_df[(frag_month_df['TripStatus'] == 'Empty') | (frag_month_df['DisplayParty'] == '') | (frag_month_df['DisplayParty'].isna())])
+        own_cars = int(frag_month_df['CarQty'].sum())
+        own_freight = frag_month_df['Freight'].sum()
 
         # Calculate Vendor metrics for full month
         vendor_cars = 0
         vendor_freight = 0.0
         vendor_trips = 0
-        if not vendor_df.empty:
-            vendor_month_df = vendor_df[
-                (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
-                (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
+        if not frag_vendor_df.empty:
+            vendor_month_df = frag_vendor_df[
+                (frag_vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
+                (frag_vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
             ].copy()
             if not vendor_month_df.empty:
                 # Apply vendor mapping to filter only mapped vendors
@@ -715,6 +800,8 @@ def main():
 
         @st.fragment(run_every=REFRESH_10_MIN)
         def target_vs_actual_fragment():
+            # Auto-refresh: reload data from database
+            refresh_session_data()
             month_display = selected_month.strftime("%b'%y")
             st.markdown(f"**Selected Month:** {month_display}")
 
@@ -1100,13 +1187,17 @@ def main():
 
         @st.fragment(run_every=REFRESH_10_MIN)
         def daily_loading_fragment():
+            # Auto-refresh: reload data from database
+            refresh_session_data()
+            frag_df = st.session_state.df
+
             # Date filter and summary in one row
             col_date, col_cars, col_trips_count, col_empty = st.columns([1, 1, 1, 1])
             with col_date:
                 selected_date = st.date_input("Select Date", datetime.now().date(), key='daily_date_fragment')
 
             # Filter data for selected date - only loaded trips (with Party Name)
-            daily_data = df[
+            daily_data = frag_df[
                 (df['LoadingDateOnly'] == selected_date) &
                 (df['DisplayParty'] != '') &
                 (df['DisplayParty'].notna()) &
@@ -1460,6 +1551,9 @@ def main():
         # Use fragment to prevent tab switching on filter change
         @st.fragment(run_every=REFRESH_15_MIN)
         def local_pilot_fragment():
+            # Auto-refresh: reload data from database
+            refresh_session_data()
+
             # Pre-load ALL vehicle types once at the start for better performance
             kia_vehicles = load_vehicles_by_type('TR_KIA_LCL')
             kia_ap_vehicles = load_vehicles_by_type('TR_KIA_AP PASSING')
@@ -1816,11 +1910,19 @@ def main():
 
         @st.fragment(run_every=REFRESH_15_MIN)
         def zone_view_fragment():
+            # Auto-refresh: reload data from database
+            refresh_session_data()
+            frag_df = st.session_state.df
+            # Re-filter for selected month
+            frag_month_df = frag_df[(frag_df['LoadingDateOnly'] >= month_start.date()) & (frag_df['LoadingDateOnly'] <= month_end.date())]
+            if selected_party != 'All':
+                frag_month_df = frag_month_df[frag_month_df['DisplayParty'] == selected_party]
+
             # Filter loaded trips only (same as summary box logic)
-            loaded_df = month_df[
-                (month_df['TripStatus'] != 'Empty') &
-                (month_df['DisplayParty'] != '') &
-                (month_df['DisplayParty'].notna())
+            loaded_df = frag_month_df[
+                (frag_month_df['TripStatus'] != 'Empty') &
+                (frag_month_df['DisplayParty'] != '') &
+                (frag_month_df['DisplayParty'].notna())
             ].copy()
 
             # Extract Origin and Destination from Route
@@ -2153,6 +2255,9 @@ def main():
 
         @st.fragment(run_every=REFRESH_10_MIN)
         def pending_cn_fragment():
+            # Auto-refresh: reload data from database
+            refresh_session_data()
+
             # D-3 date filter (show trips loaded on or before 3 days ago)
             d_minus_3 = datetime.now().date() - timedelta(days=3)
 
@@ -2353,31 +2458,38 @@ def main():
         @st.fragment(run_every=REFRESH_10_MIN)
         def cn_aging_fragment():
             try:
-                conn = get_db_connection()
-                if conn is not None:
-                    # Query cn_data where tl_no is not blank, joined with swift_trip_log for loading_date
-                    # Filter by last 7 days based on cn_date
+                # Auto-refresh: reload data from database
+                refresh_session_data()
+                frag_cn_data = st.session_state.cn_data
+                frag_df = st.session_state.df
+
+                if not frag_cn_data.empty and not frag_df.empty:
                     last_7_days = (datetime.now() - timedelta(days=7)).date()
-                    aging_query = f"""
-                        SELECT
-                            c.branch,
-                            c.cn_no,
-                            c.cn_date,
-                            c.tl_no,
-                            t.loading_date,
-                            c.cn_date::date - t.loading_date::date as aging_days
-                        FROM cn_data c
-                        INNER JOIN swift_trip_log t ON c.tl_no = t.tlhs_no
-                        WHERE c.tl_no IS NOT NULL
-                          AND c.tl_no != ''
-                          AND c.cn_date IS NOT NULL
-                          AND t.loading_date IS NOT NULL
-                          AND c.cn_date::date >= '{last_7_days}'
-                          AND c.cn_date::date >= t.loading_date::date
-                          AND NOT (c.billing_party = 'Ranjeet Singh Logistics' AND c.basic_freight = 65000)
-                    """
-                    aging_df = pd.read_sql_query(aging_query, conn)
-                    conn.close()
+
+                    # Filter cn_data: tl_no not blank, cn_date in last 7 days
+                    cn_filtered = frag_cn_data[
+                        (frag_cn_data['tl_no'].notna()) &
+                        (frag_cn_data['tl_no'] != '') &
+                        (frag_cn_data['cn_date'].notna()) &
+                        (frag_cn_data['cn_date'].dt.date >= last_7_days)
+                    ].copy()
+
+                    # Merge with trip log to get loading_date
+                    aging_df = cn_filtered.merge(
+                        frag_df[['TLHSNo', 'LoadingDate']],
+                        left_on='tl_no',
+                        right_on='TLHSNo',
+                        how='inner'
+                    )
+
+                    # Filter: cn_date >= loading_date and loading_date not null
+                    aging_df = aging_df[
+                        (aging_df['LoadingDate'].notna()) &
+                        (aging_df['cn_date'].dt.date >= aging_df['LoadingDate'].dt.date)
+                    ]
+
+                    # Calculate aging days
+                    aging_df['aging_days'] = (aging_df['cn_date'].dt.date - aging_df['LoadingDate'].dt.date).apply(lambda x: x.days if x else 0)
 
                     if len(aging_df) > 0:
                         # Group by branch and calculate most common days (mode)
@@ -2433,7 +2545,7 @@ def main():
                     else:
                         st.info("No CN records found with Trip Log mapping.")
                 else:
-                    st.warning("Could not connect to database.")
+                    st.info("No CN records found with Trip Log mapping.")
             except Exception as e:
                 st.error(f"Error loading CN aging data: {e}")
 
@@ -2445,27 +2557,31 @@ def main():
 
         @st.fragment(run_every=REFRESH_20_MIN)
         def unbilled_cn_fragment():
-            # Load unbilled CNs (bill_no blank, pod_receipt_no not blank)
+            # Auto-refresh: reload data from database
             try:
-                conn = get_db_connection()
-                if conn is not None:
-                    unbilled_query = """
-                        SELECT billing_party,
-                               TO_CHAR(cn_date, 'YYYY-MM') as month,
-                               TO_CHAR(cn_date, 'Mon''YY') as month_display,
-                               COUNT(cn_no) as cn_count,
-                               SUM(qty) as qty_total,
-                               SUM(basic_freight) as unbilled_amount
-                        FROM cn_data
-                        WHERE (bill_no IS NULL OR bill_no = '')
-                          AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
-                          AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                          AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
-                        GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
-                        ORDER BY billing_party, month DESC
-                    """
-                    unbilled_df = pd.read_sql_query(unbilled_query, conn)
-                    conn.close()
+                refresh_session_data()
+                frag_cn_data = st.session_state.cn_data
+
+                if not frag_cn_data.empty:
+                    # Filter: bill_no blank, pod_receipt_no not blank
+                    unbilled_filtered = frag_cn_data[
+                        ((frag_cn_data['bill_no'].isna()) | (frag_cn_data['bill_no'] == '')) &
+                        (frag_cn_data['pod_receipt_no'].notna()) & (frag_cn_data['pod_receipt_no'] != '')
+                    ].copy()
+
+                    if not unbilled_filtered.empty:
+                        # Add month columns
+                        unbilled_filtered['month'] = unbilled_filtered['cn_date'].dt.strftime('%Y-%m')
+                        unbilled_filtered['month_display'] = unbilled_filtered['cn_date'].dt.strftime("%b'%y")
+
+                        # Group by billing_party and month
+                        unbilled_df = unbilled_filtered.groupby(['billing_party', 'month', 'month_display']).agg({
+                            'cn_no': 'count',
+                            'qty': 'sum',
+                            'basic_freight': 'sum'
+                        }).reset_index()
+                        unbilled_df.columns = ['billing_party', 'month', 'month_display', 'cn_count', 'qty_total', 'unbilled_amount']
+                        unbilled_df = unbilled_df.sort_values(['billing_party', 'month'], ascending=[True, False])
 
                     if not unbilled_df.empty:
                         # Add category for grouping
@@ -2629,32 +2745,20 @@ def main():
 
                             components.html(unbilled_html, height=600, scrolling=True)
 
-                            # Download button - Raw CN data
-                            conn_download = get_db_connection()
-                            if conn_download is not None:
-                                raw_unbilled_query = """
-                                    SELECT cn_no, cn_date, billing_party, origin, route,
-                                           vehicle_no, qty, basic_freight, pod_receipt_no, tl_no
-                                    FROM cn_data
-                                    WHERE (bill_no IS NULL OR bill_no = '')
-                                      AND pod_receipt_no IS NOT NULL AND pod_receipt_no != ''
-                                      AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                                      AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
-                                    ORDER BY cn_date DESC, billing_party
-                                """
-                                raw_unbilled_df = pd.read_sql_query(raw_unbilled_query, conn_download)
-                                conn_download.close()
-
-                                raw_unbilled_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
-                                                           'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No', 'TL No']
-                                unbilled_csv = raw_unbilled_df.to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download Unbilled CN Data",
-                                    data=unbilled_csv,
-                                    file_name=f"unbilled_cn_{datetime.now().strftime('%Y%m%d')}.csv",
-                                    mime="text/csv",
-                                    key="unbilled_cn_download"
-                                )
+                            # Download button - Use session_state data
+                            raw_unbilled_df = unbilled_filtered[['cn_no', 'cn_date', 'billing_party', 'origin', 'route',
+                                                                  'vehicle_no', 'qty', 'basic_freight', 'pod_receipt_no', 'tl_no']].copy()
+                            raw_unbilled_df = raw_unbilled_df.sort_values(['cn_date', 'billing_party'], ascending=[False, True])
+                            raw_unbilled_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
+                                                       'Vehicle No', 'Qty', 'Basic Freight', 'POD Receipt No', 'TL No']
+                            unbilled_csv = raw_unbilled_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Unbilled CN Data",
+                                data=unbilled_csv,
+                                file_name=f"unbilled_cn_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv",
+                                key="unbilled_cn_download"
+                            )
                     else:
                         st.success("No unbilled CNs found!")
             except Exception as e:
@@ -2666,30 +2770,30 @@ def main():
             st.caption("*CNs where Bill No is blank, POD Receipt No is blank, and ETA < D-4*")
 
             try:
-                conn = get_db_connection()
-                if conn is not None:
-                    d_minus_4 = (datetime.now() - timedelta(days=4)).date()
+                d_minus_4 = (datetime.now() - timedelta(days=4)).date()
 
-                    pending_pod_query = f"""
-                        SELECT billing_party,
-                               TO_CHAR(cn_date, 'YYYY-MM') as month,
-                               TO_CHAR(cn_date, 'Mon''YY') as month_display,
-                               COUNT(cn_no) as cn_count,
-                               SUM(qty) as qty_total,
-                               SUM(basic_freight) as unbilled_amount
-                        FROM cn_data
-                        WHERE (bill_no IS NULL OR bill_no = '')
-                          AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
-                          AND eta < '{d_minus_4}'
-                          AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                          AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
-                        GROUP BY billing_party, TO_CHAR(cn_date, 'YYYY-MM'), TO_CHAR(cn_date, 'Mon''YY')
-                        ORDER BY billing_party, month DESC
-                    """
-                    pending_pod_df = pd.read_sql_query(pending_pod_query, conn)
-                    conn.close()
+                # Filter from session_state cn_data
+                pending_pod_filtered = frag_cn_data[
+                    ((frag_cn_data['bill_no'].isna()) | (frag_cn_data['bill_no'] == '')) &
+                    ((frag_cn_data['pod_receipt_no'].isna()) | (frag_cn_data['pod_receipt_no'] == '')) &
+                    (frag_cn_data['eta'].notna()) & (pd.to_datetime(frag_cn_data['eta'], errors='coerce').dt.date < d_minus_4)
+                ].copy()
 
-                    if not pending_pod_df.empty:
+                if not pending_pod_filtered.empty:
+                    # Add month columns
+                    pending_pod_filtered['month'] = pending_pod_filtered['cn_date'].dt.strftime('%Y-%m')
+                    pending_pod_filtered['month_display'] = pending_pod_filtered['cn_date'].dt.strftime("%b'%y")
+
+                    # Group by billing_party and month
+                    pending_pod_df = pending_pod_filtered.groupby(['billing_party', 'month', 'month_display']).agg({
+                        'cn_no': 'count',
+                        'qty': 'sum',
+                        'basic_freight': 'sum'
+                    }).reset_index()
+                    pending_pod_df.columns = ['billing_party', 'month', 'month_display', 'cn_count', 'qty_total', 'unbilled_amount']
+                    pending_pod_df = pending_pod_df.sort_values(['billing_party', 'month'], ascending=[True, False])
+
+                if not pending_pod_df.empty:
                         # Add category for grouping
                         pending_pod_df['category'] = pending_pod_df['billing_party'].apply(get_client_category)
 
@@ -2851,35 +2955,22 @@ def main():
 
                             components.html(pending_pod_html, height=600, scrolling=True)
 
-                            # Download button - Raw CN data
-                            conn_download2 = get_db_connection()
-                            if conn_download2 is not None:
-                                raw_pending_pod_query = f"""
-                                    SELECT cn_no, cn_date, billing_party, origin, route,
-                                           vehicle_no, qty, basic_freight, eta, tl_no
-                                    FROM cn_data
-                                    WHERE (bill_no IS NULL OR bill_no = '')
-                                      AND (pod_receipt_no IS NULL OR pod_receipt_no = '')
-                                      AND eta < '{d_minus_4}'
-                                      AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-                                      AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
-                                    ORDER BY cn_date DESC, billing_party
-                                """
-                                raw_pending_pod_df = pd.read_sql_query(raw_pending_pod_query, conn_download2)
-                                conn_download2.close()
-
-                                raw_pending_pod_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
-                                                              'Vehicle No', 'Qty', 'Basic Freight', 'ETA', 'TL No']
-                                pending_pod_csv = raw_pending_pod_df.to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download Pending POD Data",
-                                    data=pending_pod_csv,
-                                    file_name=f"pending_pod_{datetime.now().strftime('%Y%m%d')}.csv",
-                                    mime="text/csv",
-                                    key="pending_pod_download"
-                                )
-                    else:
-                        st.success("No pending POD CNs found!")
+                            # Download button - Use session_state data
+                            raw_pending_pod_df = pending_pod_filtered[['cn_no', 'cn_date', 'billing_party', 'origin', 'route',
+                                                                        'vehicle_no', 'qty', 'basic_freight', 'eta', 'tl_no']].copy()
+                            raw_pending_pod_df = raw_pending_pod_df.sort_values(['cn_date', 'billing_party'], ascending=[False, True])
+                            raw_pending_pod_df.columns = ['CN No', 'CN Date', 'Billing Party', 'Origin', 'Route',
+                                                          'Vehicle No', 'Qty', 'Basic Freight', 'ETA', 'TL No']
+                            pending_pod_csv = raw_pending_pod_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Pending POD Data",
+                                data=pending_pod_csv,
+                                file_name=f"pending_pod_{datetime.now().strftime('%Y%m%d')}.csv",
+                                mime="text/csv",
+                                key="pending_pod_download"
+                            )
+                else:
+                    st.success("No pending POD CNs found!")
             except Exception as e:
                 st.error(f"Error loading pending POD data: {e}")
 
