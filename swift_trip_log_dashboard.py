@@ -803,6 +803,9 @@ def main():
         def target_vs_actual_fragment():
             # Auto-refresh: reload data from database
             refresh_session_data()
+            frag_df = st.session_state.df
+            frag_vendor_df = st.session_state.vendor_df
+
             month_display = selected_month.strftime("%b'%y")
             st.markdown(f"**Selected Month:** {month_display}")
 
@@ -821,19 +824,19 @@ def main():
                 compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
 
             # Filter data for current period (using date only for accurate comparison)
-            current_df = df[
-                (df['LoadingDateOnly'] >= select_month_start) &
-                (df['LoadingDateOnly'] <= till_date) &
-                (df['DisplayParty'] != '') &
-                (df['DisplayParty'].notna())
+            current_df = frag_df[
+                (frag_df['LoadingDateOnly'] >= select_month_start) &
+                (frag_df['LoadingDateOnly'] <= till_date) &
+                (frag_df['DisplayParty'] != '') &
+                (frag_df['DisplayParty'].notna())
             ]
 
             # Filter data for comparison period
-            compare_df = df[
-                (df['LoadingDateOnly'] >= compare_month) &
-                (df['LoadingDateOnly'] <= compare_till_date) &
-                (df['DisplayParty'] != '') &
-                (df['DisplayParty'].notna())
+            compare_df = frag_df[
+                (frag_df['LoadingDateOnly'] >= compare_month) &
+                (frag_df['LoadingDateOnly'] <= compare_till_date) &
+                (frag_df['DisplayParty'] != '') &
+                (frag_df['DisplayParty'].notna())
             ]
 
             till_date_display = till_date.strftime("%dth %b'%y")
@@ -852,11 +855,11 @@ def main():
             summary['Vendor_Cars'] = 0
             summary['Vendor_Freight'] = 0.0
 
-            if not vendor_df.empty:
+            if not frag_vendor_df.empty:
                 # Filter vendor data for current period (convert to Timestamp for consistent comparison)
-                vendor_current = vendor_df[
-                    (vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
-                    (vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
+                vendor_current = frag_vendor_df[
+                    (frag_vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
+                    (frag_vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
                 ].copy()
 
                 if not vendor_current.empty:
@@ -1199,10 +1202,10 @@ def main():
 
             # Filter data for selected date - only loaded trips (with Party Name)
             daily_data = frag_df[
-                (df['LoadingDateOnly'] == selected_date) &
-                (df['DisplayParty'] != '') &
-                (df['DisplayParty'].notna()) &
-                (df['CarQty'] > 0)
+                (frag_df['LoadingDateOnly'] == selected_date) &
+                (frag_df['DisplayParty'] != '') &
+                (frag_df['DisplayParty'].notna()) &
+                (frag_df['CarQty'] > 0)
             ]
 
             # Own totals
@@ -1210,12 +1213,13 @@ def main():
             own_trips_count = len(daily_data)
 
             # Vendor totals for selected date
+            frag_vendor_df = st.session_state.vendor_df
             vendor_cars_lifted = 0
             vendor_trips_count = 0
-            if not vendor_df.empty:
-                vendor_daily_data = vendor_df[
-                    (vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
-                    (vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+            if not frag_vendor_df.empty:
+                vendor_daily_data = frag_vendor_df[
+                    (frag_vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
+                    (frag_vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
                 ].copy()
                 if not vendor_daily_data.empty:
                     vendor_daily_data['MappedParty'] = vendor_daily_data.apply(
@@ -1338,10 +1342,10 @@ def main():
                 st.markdown(f"**Vendor Loading Details {selected_date.strftime('%d-%b-%Y')}**")
 
                 # Filter vendor data for selected date
-                if not vendor_df.empty:
-                    vendor_daily = vendor_df[
-                        (vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
-                        (vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+                if not frag_vendor_df.empty:
+                    vendor_daily = frag_vendor_df[
+                        (frag_vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
+                        (frag_vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
                     ].copy()
                     if not vendor_daily.empty:
                         # Apply vendor mapping
@@ -1471,10 +1475,10 @@ def main():
                 st.markdown("<br>", unsafe_allow_html=True)
                 st.markdown(f"**Vendor Summary {selected_date.strftime('%d-%b-%Y')}**")
 
-                if not vendor_df.empty:
-                    vendor_daily_summary = vendor_df[
-                        (vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
-                        (vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
+                if not frag_vendor_df.empty:
+                    vendor_daily_summary = frag_vendor_df[
+                        (frag_vendor_df['CNDate'] >= pd.Timestamp(selected_date)) &
+                        (frag_vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
                     ].copy()
                     if not vendor_daily_summary.empty:
                         vendor_daily_summary['MappedParty'] = vendor_daily_summary.apply(
@@ -1914,6 +1918,7 @@ def main():
             # Auto-refresh: reload data from database
             refresh_session_data()
             frag_df = st.session_state.df
+            frag_vendor_df = st.session_state.vendor_df
             # Re-filter for selected month
             frag_month_df = frag_df[(frag_df['LoadingDateOnly'] >= month_start.date()) & (frag_df['LoadingDateOnly'] <= month_end.date())]
             if selected_party != 'All':
@@ -2065,11 +2070,11 @@ def main():
             st.markdown("---")
             st.markdown("#### Vendor Zone View")
 
-            if not vendor_df.empty:
+            if not frag_vendor_df.empty:
                 # Filter vendor data for the month
-                vendor_zone_df = vendor_df[
-                    (vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
-                    (vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
+                vendor_zone_df = frag_vendor_df[
+                    (frag_vendor_df['CNDate'] >= pd.Timestamp(month_start.date())) &
+                    (frag_vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
                 ].copy()
 
                 if not vendor_zone_df.empty:
@@ -2258,6 +2263,7 @@ def main():
         def pending_cn_fragment():
             # Auto-refresh: reload data from database
             refresh_session_data()
+            frag_df = st.session_state.df
 
             # D-3 date filter (show trips loaded on or before 3 days ago)
             d_minus_3 = datetime.now().date() - timedelta(days=3)
@@ -2267,9 +2273,9 @@ def main():
 
             # For Pending CN: Include both last month and current month data
             last_month_start = (month_start - timedelta(days=1)).replace(day=1)
-            pending_data = df[
-                (df['LoadingDateOnly'] >= last_month_start.date()) &
-                (df['LoadingDateOnly'] <= month_end.date())
+            pending_data = frag_df[
+                (frag_df['LoadingDateOnly'] >= last_month_start.date()) &
+                (frag_df['LoadingDateOnly'] <= month_end.date())
             ].copy()
 
             # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
