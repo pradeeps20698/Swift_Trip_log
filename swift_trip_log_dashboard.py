@@ -106,7 +106,7 @@ def load_triplog_data():
         query = """
             SELECT * FROM swift_trip_log
             WHERE loading_date IS NOT NULL
-              AND loading_date <= CURRENT_DATE
+              AND loading_date::date <= CURRENT_DATE
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
