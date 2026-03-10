@@ -414,19 +414,14 @@ def get_client_category(party_name):
         return "Other"
 
 
-def main():
-    # Header
-    st.markdown("<h1 style='text-align: center;'>🚚 Swift Trip Log Dashboard</h1>", unsafe_allow_html=True)
-
-    # Load data
-    with st.spinner("Loading data..."):
-        df = load_triplog_data()
-        vendor_df = load_vendor_data()
-        targets = load_targets()
+@st.cache_data(ttl=300)
+def load_and_process_data():
+    """Load and process all data - cached to avoid reprocessing on filter changes"""
+    df = load_triplog_data()
+    vendor_df = load_vendor_data()
 
     if df.empty:
-        st.error("No data available. Please check the database connection.")
-        return
+        return df, vendor_df
 
     # Convert date columns
     df['LoadingDate'] = pd.to_datetime(df['LoadingDate'], errors='coerce')
@@ -452,6 +447,27 @@ def main():
     # Add client category based on DisplayParty
     df['category'] = df['DisplayParty'].apply(get_client_category)
 
+    return df, vendor_df
+
+
+def main():
+    # Header
+    st.markdown("<h1 style='text-align: center;'>🚚 Swift Trip Log Dashboard</h1>", unsafe_allow_html=True)
+
+    # Load data - only show spinner on first load
+    if 'data_loaded' not in st.session_state:
+        with st.spinner("Loading data..."):
+            df, vendor_df = load_and_process_data()
+            st.session_state.data_loaded = True
+    else:
+        df, vendor_df = load_and_process_data()
+
+    targets = load_targets()
+
+    if df.empty:
+        st.error("No data available. Please check the database connection.")
+        return
+
     # Sidebar Filters
     st.sidebar.header("Filters")
 
@@ -476,6 +492,7 @@ def main():
     # Refresh button
     if st.sidebar.button("🔄 Refresh Data"):
         st.cache_data.clear()
+        st.session_state.data_loaded = False
         st.rerun()
 
     # Target SOB Update Section
