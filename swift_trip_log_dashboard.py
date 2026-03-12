@@ -177,6 +177,7 @@ def load_vendor_data():
                OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle'))
                AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
                AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+               AND is_active = 'Yes'
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -217,6 +218,7 @@ def load_cn_data():
             FROM cn_data
             WHERE (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
               AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+              AND is_active = 'Yes'
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -2297,6 +2299,7 @@ def main():
                             FROM cn_data
                             WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
                               AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+                              AND is_active = 'Yes'
                         """
                         cn_records = pd.read_sql_query(cn_query, conn)
 
@@ -2309,6 +2312,7 @@ def main():
                               AND route IS NOT NULL AND route != ''
                               AND vehicle_no IS NOT NULL AND vehicle_no != ''
                               AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+                              AND is_active = 'Yes'
                         """
                         own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
                         conn.close()
