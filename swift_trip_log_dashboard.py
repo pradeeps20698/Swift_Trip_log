@@ -797,7 +797,7 @@ def main():
         st.session_state.selected_tab = 0
 
     # Tabs with key to maintain state
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "📋 Pending CN - Triplogs"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs"])
 
     with tab1:
         # Target vs Actual - Client-Wise Summary
@@ -2194,73 +2194,671 @@ def main():
             else:
                 st.info("No vendor data available.")
 
-            # Chart: Zone by Car Lifted (excluding DC Movement)
-            st.markdown("---")
-            st.markdown("#### Zone by Car Lifted")
-            st.caption("*Note: DC Movement not included*")
-
-            import plotly.graph_objects as go
-
-            # Filter out DC Movement for this chart
-            chart_df = loaded_df[~loaded_df['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
-
-            # Recalculate zone matrix excluding DC Movement
-            chart_cars_matrix = {}
-            for origin_zone in zones:
-                chart_cars_matrix[origin_zone] = {}
-                for dest_zone in zones:
-                    count = chart_df[(chart_df['Origin_Zone'] == origin_zone) & (chart_df['Dest_Zone'] == dest_zone)]['CarQty'].sum()
-                    chart_cars_matrix[origin_zone][dest_zone] = int(count) if count > 0 else 0
-
-            # Get top routes for chart
-            route_data = []
-            for oz in zones:
-                for dz in zones:
-                    if chart_cars_matrix[oz][dz] > 0:
-                        route_data.append({
-                            'Route': f'{oz} → {dz}',
-                            'Cars': chart_cars_matrix[oz][dz]
-                        })
-
-            if route_data:
-                route_df = pd.DataFrame(route_data).sort_values('Cars', ascending=True).tail(10)
-
-                fig = go.Figure()
-                fig.add_trace(go.Bar(
-                    y=route_df['Route'],
-                    x=route_df['Cars'],
-                    orientation='h',
-                    marker_color=['#22c55e' if c >= route_df['Cars'].quantile(0.7) else '#3b82f6' if c >= route_df['Cars'].quantile(0.4) else '#eab308' for c in route_df['Cars']],
-                    text=route_df['Cars'],
-                    textposition='outside'
-                ))
-                fig.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    font=dict(color='white'),
-                    height=400,
-                    xaxis_title='Cars Lifted',
-                    yaxis_title='',
-                    margin=dict(l=100, r=50, t=20, b=50)
-                )
-                fig.update_xaxes(showgrid=True, gridcolor='rgba(255,255,255,0.1)')
-                fig.update_yaxes(showgrid=False)
-                st.plotly_chart(fig, use_container_width=True)
-
-            # Show unmapped cities if any
-            other_origins = loaded_df[loaded_df['Origin_Zone'] == 'Other']['Origin'].unique()
-            other_dests = loaded_df[loaded_df['Dest_Zone'] == 'Other']['Destination'].unique()
-
-            if len(other_origins) > 0 or len(other_dests) > 0:
-                with st.expander("Unmapped Cities (Other Zone)"):
-                    if len(other_origins) > 0:
-                        st.write("**Origins:**", ', '.join(sorted(set(other_origins))))
-                    if len(other_dests) > 0:
-                        st.write("**Destinations:**", ', '.join(sorted(set(other_dests))))
-
         zone_view_fragment()
 
     with tab5:
+        st.markdown("### NSK/Ckn Round Trips - Round Trip Analysis")
+        st.caption("*NSK/Ckn-north dedicated vehicles - Loaded from Pune/Nashik with return empty trips*")
+
+        @st.fragment(run_every=REFRESH_15_MIN)
+        def cinder_trips_fragment():
+            # Auto-refresh: reload data from database
+            refresh_session_data()
+
+            # Load NSK/Ckn-north dedicated vehicles (exactly 20 vehicles)
+            nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
+
+            if not nsk_ckn_vehicles:
+                st.info("No NSK/Ckn-north dedicated vehicles found.")
+                return
+
+            st.caption(f"*Showing {len(nsk_ckn_vehicles)} NSK/Ckn-north dedicated vehicles*")
+
+            # Use month_df which is filtered by sidebar month filter
+            frag_df = month_df.copy()
+
+            # Filter for exact NSK/Ckn vehicles only
+            vehicle_df = frag_df[frag_df['VehicleNo'].isin(nsk_ckn_vehicles)].copy()
+
+            if len(vehicle_df) == 0:
+                st.info("No trips found for NSK/Ckn-north dedicated vehicles.")
+                return
+
+            # Extract Origin and Destination from Route
+            def extract_origin_dest(route):
+                if pd.isna(route) or route == '':
+                    return None, None
+                parts = str(route).split(' - ', 1)
+                if len(parts) == 2:
+                    return parts[0].strip(), parts[1].strip()
+                return route, None
+
+            vehicle_df[['Origin', 'Destination']] = vehicle_df['Route'].apply(
+                lambda x: pd.Series(extract_origin_dest(x))
+            )
+
+            # Sort by vehicle and loading date
+            vehicle_df = vehicle_df.sort_values(['VehicleNo', 'LoadingDate'], ascending=[True, True])
+
+            # Define Pune/Nashik patterns
+            pune_nashik_pattern = r'(?i)(pune|nashik|chakan|pimpri|ranjangaon|talegaon)'
+
+            # Find round trips
+            round_trips = []
+
+            for vehicle in vehicle_df['VehicleNo'].unique():
+                v_trips = vehicle_df[vehicle_df['VehicleNo'] == vehicle].reset_index(drop=True)
+
+                i = 0
+                while i < len(v_trips) - 1:
+                    current_trip = v_trips.iloc[i]
+                    next_trip = v_trips.iloc[i + 1]
+
+                    # Check if current trip is Loaded and starts from Pune/Nashik
+                    if (current_trip['TripStatus'] == 'Loaded' and
+                        current_trip['Origin'] and
+                        pd.notna(current_trip['Origin']) and
+                        bool(pd.Series([current_trip['Origin']]).str.contains(pune_nashik_pattern, regex=True).iloc[0])):
+
+                        # Check if next trip is Empty and returns to Pune/Nashik
+                        if (next_trip['TripStatus'] == 'Empty' and
+                            next_trip['Destination'] and
+                            pd.notna(next_trip['Destination']) and
+                            bool(pd.Series([next_trip['Destination']]).str.contains(pune_nashik_pattern, regex=True).iloc[0])):
+
+                            # Check if empty trip origin matches loaded trip destination
+                            loaded_dest = str(current_trip['Destination']).upper().strip() if current_trip['Destination'] else ''
+                            empty_origin = str(next_trip['Origin']).upper().strip() if next_trip['Origin'] else ''
+
+                            # Fuzzy match - check if they share common words
+                            if loaded_dest and empty_origin and (
+                                loaded_dest in empty_origin or
+                                empty_origin in loaded_dest or
+                                loaded_dest.split()[0] == empty_origin.split()[0] if loaded_dest and empty_origin else False
+                            ):
+                                # Get distances
+                                loaded_distance = current_trip['Distance'] if pd.notna(current_trip['Distance']) else 0
+                                empty_distance = next_trip['Distance'] if pd.notna(next_trip['Distance']) else 0
+
+                                # Calculate profitability
+                                import math
+                                loaded_exp = loaded_distance * 45.6
+                                empty_exp = empty_distance * 40
+                                revenue = current_trip['Freight'] if pd.notna(current_trip['Freight']) else 0
+                                total_exp = loaded_exp + empty_exp
+                                contribution = revenue - total_exp
+                                total_distance = loaded_distance + empty_distance
+                                calc_days_raw = total_distance / 350 if total_distance > 0 else 0
+                                calc_days = math.ceil(calc_days_raw) if calc_days_raw > 0 else 0  # Round up
+                                per_day_contribution = contribution / calc_days if calc_days > 0 else 0
+
+                                round_trips.append({
+                                    'VehicleNo': vehicle,
+                                    'Loaded_Date': current_trip['LoadingDate'],
+                                    'Loaded_Route': current_trip['Route'],
+                                    'Loaded_Party': current_trip['NewPartyName'] or current_trip['Party'],
+                                    'Loaded_Cars': current_trip['CarQty'],
+                                    'Loaded_Freight': current_trip['Freight'],
+                                    'Empty_Date': next_trip['LoadingDate'],
+                                    'Empty_Route': next_trip['Route'],
+                                    'Days_Gap': (next_trip['LoadingDate'].date() - current_trip['LoadingDate'].date()).days if pd.notna(next_trip['LoadingDate']) and pd.notna(current_trip['LoadingDate']) else None,
+                                    'Loaded_Distance': loaded_distance,
+                                    'Empty_Distance': empty_distance,
+                                    'Total_Distance': total_distance,
+                                    'Loaded_Exp': loaded_exp,
+                                    'Empty_Exp': empty_exp,
+                                    'Revenue': revenue,
+                                    'Contribution': contribution,
+                                    'Calc_Days': calc_days,
+                                    'Per_Day_Contribution': per_day_contribution
+                                })
+                                i += 2  # Skip both trips
+                                continue
+                    i += 1
+
+            if round_trips:
+                round_df = pd.DataFrame(round_trips)
+
+                # Count trips by profitability category
+                green_count = len(round_df[round_df['Per_Day_Contribution'] >= 7000])
+                amber_count = len(round_df[(round_df['Per_Day_Contribution'] >= 5000) & (round_df['Per_Day_Contribution'] < 7000)])
+                red_count = len(round_df[(round_df['Per_Day_Contribution'] >= 3000) & (round_df['Per_Day_Contribution'] < 5000)])
+                not_profit_count = len(round_df[round_df['Per_Day_Contribution'] < 3000])
+
+                # Summary metrics
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("Total Round Trips", len(round_df))
+                with col2:
+                    st.metric("Total Cars Lifted", int(round_df['Loaded_Cars'].sum()))
+                with col3:
+                    st.metric("Total Revenue", f"₹{round_df['Revenue'].sum()/100000:.2f}L")
+                with col4:
+                    st.metric("Total Contribution", f"₹{round_df['Contribution'].sum()/100000:.2f}L")
+                with col5:
+                    avg_per_day = round_df['Per_Day_Contribution'].mean()
+                    st.metric("Avg Per Day Contrib.", f"₹{avg_per_day:,.0f}" if pd.notna(avg_per_day) else "N/A")
+
+                # Profitability breakdown
+                st.markdown(f"""
+                <div style="display: flex; gap: 20px; margin: 10px 0 20px 0;">
+                    <span style="background: #166534; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🟢 Green (>₹7K): {green_count}</span>
+                    <span style="background: #b45309; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🟡 Amber (₹5-7K): {amber_count}</span>
+                    <span style="background: #991b1b; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🔴 Red (₹3-5K): {red_count}</span>
+                    <span style="background: #374151; color: #9ca3af; padding: 8px 16px; border-radius: 5px; font-weight: bold;">⚫ Not Profitable (<₹3K): {not_profit_count}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("---")
+                st.markdown("#### Round Trip Profitability Details")
+
+                # Create HTML table with color coding
+                import streamlit.components.v1 as components
+
+                # Build HTML table
+                html_table = """
+                <style>
+                    body { background-color: #0e1117; }
+                    .table-container { overflow-x: auto; background-color: #0e1117; }
+                    .profit-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px; background-color: #0e1117; table-layout: fixed; }
+                    .profit-table th { background: #1e3a5f; color: #ffffff; padding: 8px 6px; text-align: center; border-bottom: 2px solid #2d5a8b; white-space: nowrap; }
+                    .profit-table td { padding: 6px; border-bottom: 1px solid #2d3748; white-space: nowrap; color: #ffffff; background-color: #1a1a2e; text-align: center; overflow: hidden; text-overflow: ellipsis; }
+                    .profit-table tr:hover td { background: #252540; }
+                    .green { background: #166534 !important; color: white; font-weight: bold; }
+                    .amber { background: #b45309 !important; color: white; font-weight: bold; }
+                    .red { background: #991b1b !important; color: white; font-weight: bold; }
+                    .not-profit { background: #374151 !important; color: #9ca3af; font-weight: bold; }
+                    .left-align { text-align: left; }
+                </style>
+                <div class="table-container">
+                <table class="profit-table">
+                <colgroup>
+                    <col style="width: 9%;">
+                    <col style="width: 8%;">
+                    <col style="width: 16%;">
+                    <col style="width: 18%;">
+                    <col style="width: 5%;">
+                    <col style="width: 8%;">
+                    <col style="width: 7%;">
+                    <col style="width: 8%;">
+                    <col style="width: 8%;">
+                    <col style="width: 5%;">
+                    <col style="width: 8%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Vehicle</th>
+                        <th>Date</th>
+                        <th>Loaded Route</th>
+                        <th>Party</th>
+                        <th>Cars</th>
+                        <th>Revenue</th>
+                        <th>Dist</th>
+                        <th>Expense</th>
+                        <th>Contrib.</th>
+                        <th>Days</th>
+                        <th>Per Day</th>
+                    </tr>
+                </thead>
+                <tbody>
+                """
+
+                for _, row in round_df.iterrows():
+                    per_day = row['Per_Day_Contribution']
+                    if per_day >= 7000:
+                        color_class = 'green'
+                    elif per_day >= 5000:
+                        color_class = 'amber'
+                    elif per_day >= 3000:
+                        color_class = 'red'
+                    else:
+                        color_class = 'not-profit'
+
+                    loaded_date = pd.to_datetime(row['Loaded_Date']).strftime('%d-%b-%Y') if pd.notna(row['Loaded_Date']) else ''
+                    revenue_fmt = f"₹{row['Revenue']/100000:.2f}L" if row['Revenue'] > 0 else "₹0"
+                    total_exp = row['Loaded_Exp'] + row['Empty_Exp']
+                    total_exp_fmt = f"₹{total_exp/100000:.2f}L"
+                    contrib_fmt = f"₹{row['Contribution']/100000:.2f}L"
+                    per_day_fmt = f"₹{per_day:,.0f}"
+
+                    html_table += f"""
+                    <tr>
+                        <td>{row['VehicleNo']}</td>
+                        <td>{loaded_date}</td>
+                        <td class="left-align" title="{row['Loaded_Route']}">{row['Loaded_Route']}</td>
+                        <td class="left-align" title="{row['Loaded_Party'] or ''}">{row['Loaded_Party'] or ''}</td>
+                        <td>{int(row['Loaded_Cars'])}</td>
+                        <td>{revenue_fmt}</td>
+                        <td>{int(row['Total_Distance'])} km</td>
+                        <td>{total_exp_fmt}</td>
+                        <td>{contrib_fmt}</td>
+                        <td>{int(row['Calc_Days'])}</td>
+                        <td class="{color_class}">{per_day_fmt}</td>
+                    </tr>
+                    """
+
+                html_table += "</tbody></table></div>"
+
+                components.html(html_table, height=min(len(round_df) * 40 + 100, 500), scrolling=True)
+            else:
+                st.info("No round trips found matching the criteria (Loaded from Pune/Nashik → Empty return to Pune/Nashik)")
+
+            # Also show all trips for reference
+            st.markdown("---")
+            with st.expander("📋 All Trips for NSK/Ckn Vehicles"):
+                all_trips_display = vehicle_df[['VehicleNo', 'LoadingDate', 'Route', 'TripStatus', 'NewPartyName', 'CarQty', 'Freight']].copy()
+                all_trips_display['LoadingDate'] = pd.to_datetime(all_trips_display['LoadingDate']).dt.strftime('%d-%b-%Y')
+                all_trips_display.columns = ['Vehicle', 'Date', 'Route', 'Status', 'Party', 'Cars', 'Freight']
+                st.dataframe(all_trips_display.sort_values('Date', ascending=False), use_container_width=True, hide_index=True)
+
+        cinder_trips_fragment()
+
+    with tab6:
+        st.markdown("### Trip Profitability - All Loaded Trips")
+        st.caption("*Profitability analysis for all loaded trips*")
+
+        @st.fragment(run_every=REFRESH_15_MIN)
+        def trip_profitability_fragment():
+            import math
+            # Auto-refresh: reload data from database
+            refresh_session_data()
+
+            # Use month_df which is filtered by sidebar month filter
+            frag_df = month_df.copy()
+
+            if len(frag_df) == 0:
+                st.info("No trip data available for selected month.")
+                return
+
+            # Load historical trip data for distance lookup (both empty and loaded trips)
+            @st.cache_data(ttl=3600)
+            def get_historical_empty_routes():
+                """Get historical trip patterns with distances from all past trips"""
+                try:
+                    conn = get_db_connection()
+                    if conn is None:
+                        return {}
+                    # Get distances from ALL trips (empty and loaded) for better coverage
+                    query = """
+                        SELECT
+                            UPPER(TRIM(SPLIT_PART(route, ' - ', 1))) as origin,
+                            UPPER(TRIM(SPLIT_PART(route, ' - ', 2))) as destination,
+                            COUNT(*) as trip_count,
+                            AVG(distance) as avg_distance,
+                            trip_status
+                        FROM swift_trip_log
+                        WHERE route IS NOT NULL
+                            AND route LIKE '%-%'
+                            AND distance > 0
+                        GROUP BY UPPER(TRIM(SPLIT_PART(route, ' - ', 1))), UPPER(TRIM(SPLIT_PART(route, ' - ', 2))), trip_status
+                        HAVING COUNT(*) >= 1
+                    """
+                    hist_df = pd.read_sql_query(query, conn)
+                    conn.close()
+
+                    # Create lookup: origin -> list of (destination, avg_distance, count)
+                    # Prioritize empty trips for suggestions, but use any trip for distance
+                    routes = {}
+                    for _, row in hist_df.iterrows():
+                        origin = row['origin']
+                        if origin not in routes:
+                            routes[origin] = []
+                        # Check if this destination already exists
+                        existing = next((r for r in routes[origin] if r['destination'] == row['destination']), None)
+                        if existing:
+                            # Update with more data
+                            existing['count'] += row['trip_count']
+                            # Keep the distance (already have it)
+                        else:
+                            routes[origin].append({
+                                'destination': row['destination'],
+                                'avg_distance': row['avg_distance'],
+                                'count': row['trip_count']
+                        })
+                    return routes
+                except:
+                    return {}
+
+            historical_routes = get_historical_empty_routes()
+
+            # Extract Origin and Destination from Route
+            def extract_origin_dest(route):
+                if pd.isna(route) or route == '':
+                    return None, None
+                parts = str(route).split(' - ', 1)
+                if len(parts) == 2:
+                    return parts[0].strip(), parts[1].strip()
+                return route, None
+
+            frag_df[['Origin', 'Destination']] = frag_df['Route'].apply(
+                lambda x: pd.Series(extract_origin_dest(x))
+            )
+
+            # Sort by vehicle and loading date
+            frag_df = frag_df.sort_values(['VehicleNo', 'LoadingDate'], ascending=[True, True])
+
+            # Process all loaded trips
+            completed_trips = []  # Trips with matched empty
+            ongoing_trips = []    # Trips without empty (ongoing or with onward_route)
+
+            for vehicle in frag_df['VehicleNo'].unique():
+                v_trips = frag_df[frag_df['VehicleNo'] == vehicle].reset_index(drop=True)
+
+                i = 0
+                while i < len(v_trips):
+                    current_trip = v_trips.iloc[i]
+
+                    # Only process loaded trips
+                    if current_trip['TripStatus'] != 'Loaded':
+                        i += 1
+                        continue
+
+                    loaded_distance = current_trip['Distance'] if pd.notna(current_trip['Distance']) else 0
+                    revenue = current_trip['Freight'] if pd.notna(current_trip['Freight']) else 0
+                    loaded_dest = str(current_trip['Destination']).upper().strip() if pd.notna(current_trip['Destination']) else ''
+                    party_name = current_trip['NewPartyName'] or current_trip['Party'] or ''
+
+                    # Special handling for DC Movement trips - always green
+                    if 'DC Movement' in str(party_name):
+                        # DC Movement - shuttle trips, always profitable (green)
+                        completed_trips.append({
+                            'VehicleNo': vehicle,
+                            'Loaded_Date': current_trip['LoadingDate'],
+                            'Loaded_Route': current_trip['Route'],
+                            'Loaded_Party': party_name,
+                            'Loaded_Cars': current_trip['CarQty'],
+                            'Revenue': revenue,
+                            'Empty_Route': 'DC Movement (Shuttle)',
+                            'Total_Distance': loaded_distance,
+                            'Total_Exp': loaded_distance * 45.6,
+                            'Contribution': revenue - (loaded_distance * 45.6),
+                            'Calc_Days': 1,
+                            'Per_Day_Contribution': 10000,  # Always green (>7000)
+                            'Status': 'DC Movement'
+                        })
+                        i += 1
+                        continue
+
+                    # Check if next trip is matching empty
+                    has_matching_empty = False
+                    if i < len(v_trips) - 1:
+                        next_trip = v_trips.iloc[i + 1]
+                        if next_trip['TripStatus'] == 'Empty' and pd.notna(next_trip['Origin']):
+                            empty_origin = str(next_trip['Origin']).upper().strip()
+                            if loaded_dest and empty_origin and (
+                                loaded_dest in empty_origin or
+                                empty_origin in loaded_dest or
+                                (loaded_dest.split()[0] == empty_origin.split()[0] if loaded_dest and empty_origin else False)
+                            ):
+                                has_matching_empty = True
+                                empty_distance = next_trip['Distance'] if pd.notna(next_trip['Distance']) else 0
+                                empty_route = next_trip['Route']
+
+                                # Calculate profitability
+                                loaded_exp = loaded_distance * 45.6
+                                empty_exp = empty_distance * 40
+                                total_exp = loaded_exp + empty_exp
+                                contribution = revenue - total_exp
+                                total_distance = loaded_distance + empty_distance
+                                calc_days = math.ceil(total_distance / 350) if total_distance > 0 else 1
+                                per_day_contribution = contribution / calc_days if calc_days > 0 else 0
+
+                                completed_trips.append({
+                                    'VehicleNo': vehicle,
+                                    'Loaded_Date': current_trip['LoadingDate'],
+                                    'Loaded_Route': current_trip['Route'],
+                                    'Loaded_Party': current_trip['NewPartyName'] or current_trip['Party'],
+                                    'Loaded_Cars': current_trip['CarQty'],
+                                    'Revenue': revenue,
+                                    'Empty_Route': empty_route,
+                                    'Total_Distance': total_distance,
+                                    'Total_Exp': total_exp,
+                                    'Contribution': contribution,
+                                    'Calc_Days': calc_days,
+                                    'Per_Day_Contribution': per_day_contribution,
+                                    'Status': 'Completed'
+                                })
+                                i += 2
+                                continue
+
+                    # No matching empty - check for onward_route or suggest
+                    if not has_matching_empty:
+                        # Branch locations - vehicles can get loaded trips from here
+                        branch_locations = ['PUNE', 'HARIDWAR', 'GURGAON', 'CHENNAI', 'ANANTAPUR',
+                                          'TAPUKERA', 'BANGALORE', 'BANGLORE', 'BENGALURU',
+                                          'SANAND', 'NASHIK', 'BECHRAJI', 'HALOL', 'CHAKAN',
+                                          'PIMPRI', 'RANJANGAON', 'BIDADI', 'KIA', 'JAMALPUR']
+
+                        onward_route = current_trip.get('OnwardRoute', '')
+                        if pd.isna(onward_route):
+                            onward_route = ''
+
+                        suggested_return = ''
+                        empty_distance = loaded_distance  # Default: same as loaded
+
+                        # Check if destination is a branch location
+                        is_branch_dest = any(branch.upper() in loaded_dest for branch in branch_locations) if loaded_dest else False
+
+                        if is_branch_dest:
+                            # Destination is a branch - assume only 50 km local empty movement
+                            suggested_return = f"Branch: {loaded_dest} (local)"
+                            empty_distance = 50
+                        elif onward_route and str(onward_route).strip():
+                            # Has onward route - extract origin/destination and lookup historical distance
+                            onward_parts = str(onward_route).split(' - ')
+                            if len(onward_parts) >= 2:
+                                onward_origin = onward_parts[0].strip().upper()
+                                onward_dest = onward_parts[-1].strip().upper()
+                                suggested_return = f"Onward: {onward_route}"
+
+                                # Lookup historical distance for this onward route
+                                if onward_origin in historical_routes:
+                                    for route_opt in historical_routes[onward_origin]:
+                                        if route_opt['destination'].upper() == onward_dest:
+                                            empty_distance = route_opt['avg_distance'] if route_opt['avg_distance'] else loaded_distance
+                                            break
+                        else:
+                            # No onward route - suggest based on historical data
+                            if loaded_dest and loaded_dest in historical_routes:
+                                options = historical_routes[loaded_dest]
+                                # Sort by count (most frequent routes)
+                                options_sorted = sorted(options, key=lambda x: x['count'], reverse=True)
+                                if options_sorted:
+                                    best = options_sorted[0]
+                                    suggested_return = f"Suggest: {loaded_dest} → {best['destination']}"
+                                    empty_distance = best['avg_distance'] if best['avg_distance'] else loaded_distance
+
+                        # Calculate estimated profitability
+                        loaded_exp = loaded_distance * 45.6
+                        empty_exp = empty_distance * 40
+                        total_exp = loaded_exp + empty_exp
+                        contribution = revenue - total_exp
+                        total_distance = loaded_distance + empty_distance
+                        calc_days = math.ceil(total_distance / 350) if total_distance > 0 else 1
+                        per_day_contribution = contribution / calc_days if calc_days > 0 else 0
+
+                        ongoing_trips.append({
+                            'VehicleNo': vehicle,
+                            'Loaded_Date': current_trip['LoadingDate'],
+                            'Loaded_Route': current_trip['Route'],
+                            'Loaded_Party': current_trip['NewPartyName'] or current_trip['Party'],
+                            'Loaded_Cars': current_trip['CarQty'],
+                            'Revenue': revenue,
+                            'Empty_Route': suggested_return or f"Ongoing from {loaded_dest}",
+                            'Total_Distance': total_distance,
+                            'Total_Exp': total_exp,
+                            'Contribution': contribution,
+                            'Calc_Days': calc_days,
+                            'Per_Day_Contribution': per_day_contribution,
+                            'Status': 'Ongoing/Estimated'
+                        })
+
+                    i += 1
+
+            # Combine all trips
+            all_trips = completed_trips + ongoing_trips
+
+            if all_trips:
+                round_df = pd.DataFrame(all_trips)
+
+                # Count DC Movement trips
+                dc_movement_count = len(round_df[round_df['Status'] == 'DC Movement'])
+
+                # Count trips by profitability category (excluding DC Movement from regular counts)
+                non_dc_df = round_df[round_df['Status'] != 'DC Movement']
+                green_count = len(non_dc_df[non_dc_df['Per_Day_Contribution'] >= 7000])
+                amber_count = len(non_dc_df[(non_dc_df['Per_Day_Contribution'] >= 5000) & (non_dc_df['Per_Day_Contribution'] < 7000)])
+                red_count = len(non_dc_df[(non_dc_df['Per_Day_Contribution'] >= 3000) & (non_dc_df['Per_Day_Contribution'] < 5000)])
+                not_profit_count = len(non_dc_df[non_dc_df['Per_Day_Contribution'] < 3000])
+
+                # Count by status
+                completed_count = len(round_df[round_df['Status'] == 'Completed'])
+                ongoing_count = len(round_df[round_df['Status'] == 'Ongoing/Estimated'])
+
+                # Summary metrics
+                col1, col2, col3, col4, col5, col6 = st.columns(6)
+                with col1:
+                    st.metric("Total Trips", len(round_df))
+                with col2:
+                    st.metric("Completed", completed_count)
+                with col3:
+                    st.metric("Ongoing", ongoing_count)
+                with col4:
+                    st.metric("Total Revenue", f"₹{round_df['Revenue'].sum()/100000:.2f}L")
+                with col5:
+                    st.metric("Total Contribution", f"₹{round_df['Contribution'].sum()/100000:.2f}L")
+                with col6:
+                    avg_per_day = round_df['Per_Day_Contribution'].mean()
+                    st.metric("Avg Per Day", f"₹{avg_per_day:,.0f}" if pd.notna(avg_per_day) else "N/A")
+
+                # Profitability breakdown
+                st.markdown(f"""
+                <div style="display: flex; gap: 15px; margin: 10px 0 20px 0; flex-wrap: wrap;">
+                    <span style="background: #166534; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🟢 Green (>₹7K): {green_count}</span>
+                    <span style="background: #059669; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🚛 DC Movement: {dc_movement_count}</span>
+                    <span style="background: #b45309; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🟡 Amber (₹5-7K): {amber_count}</span>
+                    <span style="background: #991b1b; color: white; padding: 8px 16px; border-radius: 5px; font-weight: bold;">🔴 Red (₹3-5K): {red_count}</span>
+                    <span style="background: #374151; color: #9ca3af; padding: 8px 16px; border-radius: 5px; font-weight: bold;">⚫ Not Profitable (<₹3K): {not_profit_count}</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                st.markdown("---")
+                st.markdown("#### Trip Profitability Details")
+
+                # Create HTML table with color coding
+                import streamlit.components.v1 as components
+
+                html_table = """
+                <style>
+                    body { background-color: #0e1117; }
+                    .table-container2 { overflow-x: auto; overflow-y: auto; max-height: 500px; background-color: #0e1117; }
+                    .profit-table2 { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 11px; background-color: #0e1117; table-layout: fixed; }
+                    .profit-table2 th { background: #1e3a5f; color: #ffffff; padding: 6px 4px; text-align: center; border-bottom: 2px solid #2d5a8b; white-space: nowrap; position: sticky; top: 0; z-index: 10; }
+                    .profit-table2 td { padding: 5px 4px; border-bottom: 1px solid #2d3748; white-space: nowrap; color: #ffffff; background-color: #1a1a2e; text-align: center; overflow: hidden; text-overflow: ellipsis; }
+                    .profit-table2 tr:hover td { background: #252540; }
+                    .green3 { background: #166534 !important; color: white; font-weight: bold; }
+                    .amber3 { background: #b45309 !important; color: white; font-weight: bold; }
+                    .red3 { background: #991b1b !important; color: white; font-weight: bold; }
+                    .not-profit3 { background: #374151 !important; color: #9ca3af; font-weight: bold; }
+                    .left-align2 { text-align: left; }
+                    .status-done { background: #1e40af !important; color: white; font-size: 10px; }
+                    .status-ongoing { background: #7c3aed !important; color: white; font-size: 10px; }
+                    .status-dc { background: #059669 !important; color: white; font-size: 10px; }
+                </style>
+                <div class="table-container2">
+                <table class="profit-table2">
+                <colgroup>
+                    <col style="width: 7%;">
+                    <col style="width: 6%;">
+                    <col style="width: 12%;">
+                    <col style="width: 14%;">
+                    <col style="width: 14%;">
+                    <col style="width: 4%;">
+                    <col style="width: 6%;">
+                    <col style="width: 5%;">
+                    <col style="width: 6%;">
+                    <col style="width: 6%;">
+                    <col style="width: 4%;">
+                    <col style="width: 7%;">
+                    <col style="width: 7%;">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th>Vehicle</th>
+                        <th>Date</th>
+                        <th>Loaded Route</th>
+                        <th>Party</th>
+                        <th>Return/Suggest</th>
+                        <th>Cars</th>
+                        <th>Revenue</th>
+                        <th>Dist</th>
+                        <th>Expense</th>
+                        <th>Contrib.</th>
+                        <th>Days</th>
+                        <th>Per Day</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                """
+
+                for _, row in round_df.iterrows():
+                    per_day = row['Per_Day_Contribution']
+                    status = row['Status']
+
+                    # DC Movement trips are always green
+                    if status == 'DC Movement':
+                        color_class = 'green3'
+                        per_day_fmt = 'DC'
+                        status_class = 'status-dc'
+                        status_text = '🚛'
+                    else:
+                        if per_day >= 7000:
+                            color_class = 'green3'
+                        elif per_day >= 5000:
+                            color_class = 'amber3'
+                        elif per_day >= 3000:
+                            color_class = 'red3'
+                        else:
+                            color_class = 'not-profit3'
+                        per_day_fmt = f"₹{per_day:,.0f}"
+                        status_class = 'status-done' if status == 'Completed' else 'status-ongoing'
+                        status_text = '✓' if status == 'Completed' else '⏳'
+
+                    loaded_date = pd.to_datetime(row['Loaded_Date']).strftime('%d-%b-%Y') if pd.notna(row['Loaded_Date']) else ''
+                    revenue_fmt = f"₹{row['Revenue']/100000:.2f}L" if row['Revenue'] > 0 else "₹0"
+                    total_exp_fmt = f"₹{row['Total_Exp']/100000:.2f}L"
+                    contrib_fmt = f"₹{row['Contribution']/100000:.2f}L"
+
+                    empty_route = row['Empty_Route'] or ''
+
+                    html_table += f"""
+                    <tr>
+                        <td>{row['VehicleNo']}</td>
+                        <td>{loaded_date}</td>
+                        <td class="left-align2" title="{row['Loaded_Route']}">{row['Loaded_Route']}</td>
+                        <td class="left-align2" title="{row['Loaded_Party'] or ''}">{row['Loaded_Party'] or ''}</td>
+                        <td class="left-align2" title="{empty_route}">{empty_route}</td>
+                        <td>{int(row['Loaded_Cars'])}</td>
+                        <td>{revenue_fmt}</td>
+                        <td>{int(row['Total_Distance'])}</td>
+                        <td>{total_exp_fmt}</td>
+                        <td>{contrib_fmt}</td>
+                        <td>{int(row['Calc_Days'])}</td>
+                        <td class="{color_class}">{per_day_fmt}</td>
+                        <td class="{status_class}">{status_text}</td>
+                    </tr>
+                    """
+
+                html_table += "</tbody></table></div>"
+
+                components.html(html_table, height=min(len(round_df) * 40 + 100, 600), scrolling=True)
+            else:
+                st.info("No matching trip pairs found (Loaded trip → Empty return trip)")
+
+        trip_profitability_fragment()
+
+    with tab7:
         st.markdown("### Pending CN - Triplogs")
 
         @st.fragment(run_every=REFRESH_10_MIN)
