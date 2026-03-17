@@ -2205,6 +2205,46 @@ def main():
             # Auto-refresh: reload data from database
             refresh_session_data()
 
+            # TK4 vehicles - special expense rates
+            tk4_vehicles = ['2399 NL01N', '2396 NL01N', '2398 NL01N', '2397 NL01N', '3909 NL01N',
+                           '3910 NL01N', '3907 NL01N', '3906 NL01N', '3908 NL01N', '7524 NL01N',
+                           '7526 NL01N', '7525 NL01N', '7529 NL01N', '7527 NL01N', '7530 NL01N',
+                           '7528 NL01N', '7522 NL01N', '7523 NL01N', '7521 NL01N', '2400 NL01N']
+
+            # East Zone cities for expense calculation
+            east_zone_cities = ['KOLKATA', 'HOWRAH', 'SILIGURI', 'ASANSOL', 'DURGAPUR', 'KHARAGPUR', 'MALDA',
+                               'BARDHAMAN', 'BARDDHAMAN', 'BARDHMAN', 'BEHRAMPORE', 'BERHAMPORE', 'BEHRAMPUR',
+                               'COOCHBEHAR', 'ALIPURDUAR', 'BUNIYADPUR', 'MOGRA', 'UPARNAGAR',
+                               'PATNA', 'MUZAFFARPUR', 'GAYA', 'BHAGALPUR', 'DARBHANGA', 'BEGUSARAI', 'CHAPRA',
+                               'MOTIHARI', 'PURNIA', 'SAMASTIPUR', 'BIHAR SHARIF', 'SAHARSA', 'SHARSHA', 'SIWAN',
+                               'GOPALGANJ', 'GOPALGUNJ', 'ARRAH', 'ARAH', 'AURANGABAD (BIHAR)', 'VAISHALI',
+                               'KISHANGANJ', 'JAMALPUR', 'ANISABAD', 'ANISHABAD', 'SHERGHATI',
+                               'RANCHI', 'JAMSHEDPUR', 'DHANBAD', 'BOKARO', 'HAZARIBAGH', 'HAZARIBAG', 'DEOGHAR',
+                               'DEOGARH', 'DALTONGANJ', 'BARHI(JH)', 'GIRIDIH',
+                               'BHUBANESHWAR', 'CUTTACK', 'ROURKELA', 'SAMBALPUR', 'BERHAMPUR', 'BRAHMAPUR',
+                               'BALASORE', 'PURI', 'ANGUL', 'PANIKOILI', 'KEONJHAR', 'JEYPORE', 'JAYPORE',
+                               'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON',
+                               'NORTH LAKHIMPUR', 'SILCHAR', 'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN',
+                               'WEST CHAMPARAN', 'AGARTALA', 'IMPHAL', 'PORT BLAIR',
+                               'RAIPUR', 'BILASPUR', 'BHILAI', 'KORBA', 'RAJNANDGAON', 'DURG', 'JAGDALPUR',
+                               'AMBIKAPUR', 'KANKER']
+
+            def get_expense_rates(vehicle_no, destination):
+                """Get loaded and empty expense rates based on vehicle and destination"""
+                # Check if TK4 vehicle
+                if vehicle_no in tk4_vehicles:
+                    return 30, 29  # TK4: loaded=30, empty=29
+
+                # Check if destination is in East Zone
+                if destination:
+                    dest_upper = destination.upper().strip()
+                    for city in east_zone_cities:
+                        if city in dest_upper or dest_upper in city:
+                            return 43.5, 39  # East Zone: loaded=43.5, empty=39
+
+                # Default rates
+                return 45.6, 40  # Default: loaded=45.6, empty=40
+
             # Load NSK/Ckn-north dedicated vehicles (exactly 20 vehicles)
             nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
 
@@ -2280,10 +2320,11 @@ def main():
                                 loaded_distance = current_trip['Distance'] if pd.notna(current_trip['Distance']) else 0
                                 empty_distance = next_trip['Distance'] if pd.notna(next_trip['Distance']) else 0
 
-                                # Calculate profitability
+                                # Calculate profitability - get rates based on vehicle and destination
                                 import math
-                                loaded_exp = loaded_distance * 45.6
-                                empty_exp = empty_distance * 40
+                                loaded_rate, empty_rate = get_expense_rates(vehicle, loaded_dest)
+                                loaded_exp = loaded_distance * loaded_rate
+                                empty_exp = empty_distance * empty_rate
                                 revenue = current_trip['Freight'] if pd.notna(current_trip['Freight']) else 0
                                 total_exp = loaded_exp + empty_exp
                                 contribution = revenue - total_exp
@@ -2463,6 +2504,46 @@ def main():
             # Auto-refresh: reload data from database
             refresh_session_data()
 
+            # TK4 vehicles - special expense rates
+            tk4_vehicles = ['2399 NL01N', '2396 NL01N', '2398 NL01N', '2397 NL01N', '3909 NL01N',
+                           '3910 NL01N', '3907 NL01N', '3906 NL01N', '3908 NL01N', '7524 NL01N',
+                           '7526 NL01N', '7525 NL01N', '7529 NL01N', '7527 NL01N', '7530 NL01N',
+                           '7528 NL01N', '7522 NL01N', '7523 NL01N', '7521 NL01N', '2400 NL01N']
+
+            # East Zone cities for expense calculation
+            east_zone_cities = ['KOLKATA', 'HOWRAH', 'SILIGURI', 'ASANSOL', 'DURGAPUR', 'KHARAGPUR', 'MALDA',
+                               'BARDHAMAN', 'BARDDHAMAN', 'BARDHMAN', 'BEHRAMPORE', 'BERHAMPORE', 'BEHRAMPUR',
+                               'COOCHBEHAR', 'ALIPURDUAR', 'BUNIYADPUR', 'MOGRA', 'UPARNAGAR',
+                               'PATNA', 'MUZAFFARPUR', 'GAYA', 'BHAGALPUR', 'DARBHANGA', 'BEGUSARAI', 'CHAPRA',
+                               'MOTIHARI', 'PURNIA', 'SAMASTIPUR', 'BIHAR SHARIF', 'SAHARSA', 'SHARSHA', 'SIWAN',
+                               'GOPALGANJ', 'GOPALGUNJ', 'ARRAH', 'ARAH', 'AURANGABAD (BIHAR)', 'VAISHALI',
+                               'KISHANGANJ', 'JAMALPUR', 'ANISABAD', 'ANISHABAD', 'SHERGHATI',
+                               'RANCHI', 'JAMSHEDPUR', 'DHANBAD', 'BOKARO', 'HAZARIBAGH', 'HAZARIBAG', 'DEOGHAR',
+                               'DEOGARH', 'DALTONGANJ', 'BARHI(JH)', 'GIRIDIH',
+                               'BHUBANESHWAR', 'CUTTACK', 'ROURKELA', 'SAMBALPUR', 'BERHAMPUR', 'BRAHMAPUR',
+                               'BALASORE', 'PURI', 'ANGUL', 'PANIKOILI', 'KEONJHAR', 'JEYPORE', 'JAYPORE',
+                               'GUWAHATI', 'TEZPUR', 'DIBRUGARH', 'JORHAT', 'NAGAON', 'BONGAIGAON',
+                               'NORTH LAKHIMPUR', 'SILCHAR', 'SHILLONG', 'GANGTOK', 'DIMAPUR', 'NAHARLAGUN',
+                               'WEST CHAMPARAN', 'AGARTALA', 'IMPHAL', 'PORT BLAIR',
+                               'RAIPUR', 'BILASPUR', 'BHILAI', 'KORBA', 'RAJNANDGAON', 'DURG', 'JAGDALPUR',
+                               'AMBIKAPUR', 'KANKER']
+
+            def get_expense_rates(vehicle_no, destination):
+                """Get loaded and empty expense rates based on vehicle and destination"""
+                # Check if TK4 vehicle
+                if vehicle_no in tk4_vehicles:
+                    return 30, 29  # TK4: loaded=30, empty=29
+
+                # Check if destination is in East Zone
+                if destination:
+                    dest_upper = destination.upper().strip()
+                    for city in east_zone_cities:
+                        if city in dest_upper or dest_upper in city:
+                            return 43.5, 39  # East Zone: loaded=43.5, empty=39
+
+                # Default rates
+                return 45.6, 40  # Default: loaded=45.6, empty=40
+
             # Use month_df which is filtered by sidebar month filter
             frag_df = month_df.copy()
 
@@ -2561,6 +2642,7 @@ def main():
                     # Special handling for DC Movement trips - always green
                     if 'DC Movement' in str(party_name):
                         # DC Movement - shuttle trips, always profitable (green)
+                        loaded_exp = revenue * 0.752  # 75.2% of freight
                         completed_trips.append({
                             'VehicleNo': vehicle,
                             'Loaded_Date': current_trip['LoadingDate'],
@@ -2570,11 +2652,36 @@ def main():
                             'Revenue': revenue,
                             'Empty_Route': 'DC Movement (Shuttle)',
                             'Total_Distance': loaded_distance,
-                            'Total_Exp': loaded_distance * 45.6,
-                            'Contribution': revenue - (loaded_distance * 45.6),
+                            'Total_Exp': loaded_exp,
+                            'Contribution': revenue - loaded_exp,
                             'Calc_Days': 1,
                             'Per_Day_Contribution': 10000,  # Always green (>7000)
                             'Status': 'DC Movement'
+                        })
+                        i += 1
+                        continue
+
+                    # Special handling for "By Road" vehicles - no empty trip needed
+                    if 'By Road' in str(vehicle):
+                        loaded_exp = revenue * 0.752  # 75.2% of freight
+                        contribution = revenue - loaded_exp
+                        calc_days = math.ceil(loaded_distance / 350) if loaded_distance > 0 else 1
+                        per_day_contribution = contribution / calc_days if calc_days > 0 else 0
+
+                        completed_trips.append({
+                            'VehicleNo': vehicle,
+                            'Loaded_Date': current_trip['LoadingDate'],
+                            'Loaded_Route': current_trip['Route'],
+                            'Loaded_Party': party_name,
+                            'Loaded_Cars': current_trip['CarQty'],
+                            'Revenue': revenue,
+                            'Empty_Route': 'By Road (No Return)',
+                            'Total_Distance': loaded_distance,
+                            'Total_Exp': loaded_exp,
+                            'Contribution': contribution,
+                            'Calc_Days': calc_days,
+                            'Per_Day_Contribution': per_day_contribution,
+                            'Status': 'By Road'
                         })
                         i += 1
                         continue
@@ -2594,9 +2701,10 @@ def main():
                                 empty_distance = next_trip['Distance'] if pd.notna(next_trip['Distance']) else 0
                                 empty_route = next_trip['Route']
 
-                                # Calculate profitability
-                                loaded_exp = loaded_distance * 45.6
-                                empty_exp = empty_distance * 40
+                                # Calculate profitability - get rates based on vehicle and destination
+                                loaded_rate, empty_rate = get_expense_rates(vehicle, loaded_dest)
+                                loaded_exp = loaded_distance * loaded_rate
+                                empty_exp = empty_distance * empty_rate
                                 total_exp = loaded_exp + empty_exp
                                 contribution = revenue - total_exp
                                 total_distance = loaded_distance + empty_distance
@@ -2668,9 +2776,10 @@ def main():
                                     suggested_return = f"Suggest: {loaded_dest} → {best['destination']}"
                                     empty_distance = best['avg_distance'] if best['avg_distance'] else loaded_distance
 
-                        # Calculate estimated profitability
-                        loaded_exp = loaded_distance * 45.6
-                        empty_exp = empty_distance * 40
+                        # Calculate estimated profitability - get rates based on vehicle and destination
+                        loaded_rate, empty_rate = get_expense_rates(vehicle, loaded_dest)
+                        loaded_exp = loaded_distance * loaded_rate
+                        empty_exp = empty_distance * empty_rate
                         total_exp = loaded_exp + empty_exp
                         contribution = revenue - total_exp
                         total_distance = loaded_distance + empty_distance
@@ -2745,6 +2854,31 @@ def main():
                 st.markdown("---")
                 st.markdown("#### Trip Profitability Details")
 
+                # Create export DataFrame for download
+                export_df = round_df.copy()
+                export_df['Date'] = pd.to_datetime(export_df['Loaded_Date']).dt.strftime('%d-%b-%Y')
+                export_df['Revenue_K'] = export_df['Revenue'] / 1000
+                export_df['Expense_K'] = export_df['Total_Exp'] / 1000
+                export_df['Contribution_K'] = export_df['Contribution'] / 1000
+                export_df['Per_Day'] = export_df['Per_Day_Contribution'].round(0)
+
+                # Select and rename columns for export
+                export_cols = export_df[['VehicleNo', 'Date', 'Loaded_Route', 'Loaded_Party', 'Empty_Route',
+                                        'Loaded_Cars', 'Revenue_K', 'Total_Distance', 'Expense_K',
+                                        'Contribution_K', 'Calc_Days', 'Per_Day', 'Status']]
+                export_cols.columns = ['Vehicle', 'Date', 'Loaded Route', 'Party', 'Return/Suggest',
+                                      'Cars', 'Revenue (K)', 'Distance', 'Expense (K)',
+                                      'Contribution (K)', 'Days', 'Per Day', 'Status']
+
+                # Download button
+                csv = export_cols.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Trip Profitability Data",
+                    data=csv,
+                    file_name="trip_profitability.csv",
+                    mime="text/csv",
+                )
+
                 # Create HTML table with color coding
                 import streamlit.components.v1 as components
 
@@ -2811,7 +2945,19 @@ def main():
                         color_class = 'green3'
                         per_day_fmt = 'DC'
                         status_class = 'status-dc'
-                        status_text = '🚛'
+                        status_text = '🚛 DC'
+                    elif status == 'By Road':
+                        if per_day >= 7000:
+                            color_class = 'green3'
+                        elif per_day >= 5000:
+                            color_class = 'amber3'
+                        elif per_day >= 3000:
+                            color_class = 'red3'
+                        else:
+                            color_class = 'not-profit3'
+                        per_day_fmt = f"₹{per_day:,.0f}"
+                        status_class = 'status-done'
+                        status_text = '🚚 ByRoad'
                     else:
                         if per_day >= 7000:
                             color_class = 'green3'
@@ -2822,13 +2968,17 @@ def main():
                         else:
                             color_class = 'not-profit3'
                         per_day_fmt = f"₹{per_day:,.0f}"
-                        status_class = 'status-done' if status == 'Completed' else 'status-ongoing'
-                        status_text = '✓' if status == 'Completed' else '⏳'
+                        if status == 'Completed':
+                            status_class = 'status-done'
+                            status_text = '✓ Done'
+                        else:
+                            status_class = 'status-ongoing'
+                            status_text = '⏳ Ongoing'
 
                     loaded_date = pd.to_datetime(row['Loaded_Date']).strftime('%d-%b-%Y') if pd.notna(row['Loaded_Date']) else ''
-                    revenue_fmt = f"₹{row['Revenue']/100000:.2f}L" if row['Revenue'] > 0 else "₹0"
-                    total_exp_fmt = f"₹{row['Total_Exp']/100000:.2f}L"
-                    contrib_fmt = f"₹{row['Contribution']/100000:.2f}L"
+                    revenue_fmt = f"₹{row['Revenue']/1000:.1f}K" if row['Revenue'] > 0 else "₹0"
+                    total_exp_fmt = f"₹{row['Total_Exp']/1000:.1f}K"
+                    contrib_fmt = f"₹{row['Contribution']/1000:.1f}K"
 
                     empty_route = row['Empty_Route'] or ''
 
@@ -2853,6 +3003,44 @@ def main():
                 html_table += "</tbody></table></div>"
 
                 components.html(html_table, height=min(len(round_df) * 40 + 100, 600), scrolling=True)
+
+                # Legend explaining calculations
+                st.markdown("""
+                <div style="background: #1a1a2e; border: 1px solid #2d3748; border-radius: 8px; padding: 15px; margin-top: 15px; font-size: 12px;">
+                    <strong style="color: #60a5fa;">📊 Calculation Legend:</strong>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin-top: 10px;">
+                        <div style="color: #d1d5db;">
+                            <strong>TK4 Vehicles (20):</strong> Loaded = ₹30/km, Empty = ₹29/km
+                        </div>
+                        <div style="color: #d1d5db;">
+                            <strong>East Zone Dest:</strong> Loaded = ₹43.5/km, Empty = ₹39/km
+                        </div>
+                        <div style="color: #d1d5db;">
+                            <strong>Other Vehicles:</strong> Loaded = ₹45.6/km, Empty = ₹40/km
+                        </div>
+                        <div style="color: #d1d5db;">
+                            <strong>Days:</strong> ⌈Total Distance ÷ 350⌉ (rounded up)
+                        </div>
+                        <div style="color: #d1d5db;">
+                            <strong>Contribution:</strong> Revenue - (Loaded Exp + Empty Exp)
+                        </div>
+                        <div style="color: #d1d5db;">
+                            <strong>Branch Location:</strong> 50 km empty assumed (local movement)
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid #2d3748; margin-top: 12px; padding-top: 12px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px;">
+                        <div style="color: #10b981;">
+                            <strong>🚛 DC Movement:</strong> Shuttle trips, always profitable (green)
+                        </div>
+                        <div style="color: #f59e0b;">
+                            <strong>🚚 By Road:</strong> No empty trip, Loaded Exp = Freight × 75.2%
+                        </div>
+                        <div style="color: #8b5cf6;">
+                            <strong>⏳ Ongoing:</strong> Empty trip estimated from historical data or onward route
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
             else:
                 st.info("No matching trip pairs found (Loaded trip → Empty return trip)")
 
