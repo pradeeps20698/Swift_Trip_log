@@ -270,6 +270,8 @@ def get_vendor_client_mapping(billing_party, origin=None):
             return 'Mahindra Logistics Ltd - Nashik'
         elif 'HARIDWAR' in origin_upper:
             return 'Mahindra Logistics Ltd - Haridwar'
+        elif 'ZAHEERABAD' in origin_upper:
+            return 'Mahindra Logistics Ltd - Zaheerabad'
         else:
             # Chennai, Pune, Jeypore, etc. go to main MAHINDRA LOGISTICS LTD
             return 'MAHINDRA LOGISTICS LTD'
