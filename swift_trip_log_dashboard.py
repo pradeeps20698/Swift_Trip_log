@@ -2810,6 +2810,31 @@ def main():
             if all_trips:
                 round_df = pd.DataFrame(all_trips)
 
+                # Filters at the top - apply to all summaries and tables
+                filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 4])
+
+                with filter_col1:
+                    # Date filter based on loading date
+                    date_options = ['All Dates'] + sorted(round_df['Loaded_Date'].dropna().apply(lambda x: pd.to_datetime(x).strftime('%d-%b-%Y')).unique().tolist(), reverse=True)
+                    selected_date = st.selectbox("📅 Loading Date", date_options, key="trip_date_filter_top")
+
+                with filter_col2:
+                    # Freight filter
+                    freight_options = ['All', 'Freight = 0', 'Freight > 0']
+                    selected_freight = st.selectbox("💰 Freight Filter", freight_options, key="trip_freight_filter_top")
+
+                # Apply filters to round_df
+                if selected_date != 'All Dates':
+                    round_df = round_df[pd.to_datetime(round_df['Loaded_Date']).dt.strftime('%d-%b-%Y') == selected_date]
+
+                if selected_freight == 'Freight = 0':
+                    round_df = round_df[round_df['Revenue'] == 0]
+                elif selected_freight == 'Freight > 0':
+                    round_df = round_df[round_df['Revenue'] > 0]
+
+                st.caption(f"*Showing {len(round_df)} trips*")
+                st.markdown("---")
+
                 # Count DC Movement trips
                 dc_movement_count = len(round_df[round_df['Status'] == 'DC Movement'])
 
@@ -2850,6 +2875,135 @@ def main():
                     <span style="background: #374151; color: #9ca3af; padding: 8px 16px; border-radius: 5px; font-weight: bold;">⚫ Not Profitable (<₹3K): {not_profit_count}</span>
                 </div>
                 """, unsafe_allow_html=True)
+
+                # Week-wise summary
+                st.markdown("#### Week-wise Summary")
+
+                # Add week column based on loading date
+                week_df = round_df.copy()
+                week_df['LoadDate'] = pd.to_datetime(week_df['Loaded_Date'])
+
+                # Calculate week number within the month (1-5)
+                def get_week_of_month(dt):
+                    first_day = dt.replace(day=1)
+                    day_of_month = dt.day
+                    # Week 1: days 1-7, Week 2: days 8-14, etc.
+                    return ((day_of_month - 1) // 7) + 1
+
+                week_df['WeekNum'] = week_df['LoadDate'].apply(get_week_of_month)
+                week_df['Week_Label'] = week_df['WeekNum'].apply(lambda x: f'Week {x}')
+
+                # Categorize trips by profitability
+                def get_profit_category(row):
+                    if row['Status'] == 'DC Movement':
+                        return 'Green'  # DC Movement always green
+                    per_day = row['Per_Day_Contribution']
+                    if per_day >= 7000:
+                        return 'Green'
+                    elif per_day >= 5000:
+                        return 'Amber'
+                    elif per_day >= 3000:
+                        return 'Red'
+                    else:
+                        return 'NotProfitable'
+
+                week_df['ProfitCategory'] = week_df.apply(get_profit_category, axis=1)
+
+                # Group by week
+                week_summary = week_df.groupby(['WeekNum', 'Week_Label']).agg(
+                    Trips=('VehicleNo', 'count'),
+                    Cars=('Loaded_Cars', 'sum'),
+                    Green=('ProfitCategory', lambda x: (x == 'Green').sum()),
+                    Amber=('ProfitCategory', lambda x: (x == 'Amber').sum()),
+                    Red=('ProfitCategory', lambda x: (x == 'Red').sum()),
+                    NotProfitable=('ProfitCategory', lambda x: (x == 'NotProfitable').sum())
+                ).reset_index().sort_values('WeekNum')
+
+                # Calculate percentages
+                week_summary['Green%'] = (week_summary['Green'] / week_summary['Trips'] * 100).round(1)
+                week_summary['Amber%'] = (week_summary['Amber'] / week_summary['Trips'] * 100).round(1)
+                week_summary['Red%'] = (week_summary['Red'] / week_summary['Trips'] * 100).round(1)
+                week_summary['NotProfit%'] = (week_summary['NotProfitable'] / week_summary['Trips'] * 100).round(1)
+
+                # Create HTML table for week summary
+                week_html = """
+                <style>
+                    body { background-color: #0e1117; margin: 0; padding: 0; }
+                    .week-container { background-color: #0e1117; padding: 5px; }
+                    .week-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px; background-color: #0e1117; }
+                    .week-table th { background: #1e3a5f; color: #ffffff; padding: 8px; text-align: center; border-bottom: 2px solid #2d5a8b; }
+                    .week-table td { padding: 6px 8px; border-bottom: 1px solid #2d3748; text-align: center; color: #ffffff; background-color: #1a1a2e; }
+                    .week-table tr:hover td { background: #252540; }
+                    .green-cell { background: #166534 !important; color: #ffffff; font-weight: bold; }
+                    .amber-cell { background: #b45309 !important; color: #ffffff; font-weight: bold; }
+                    .red-cell { background: #991b1b !important; color: #ffffff; font-weight: bold; }
+                    .gray-cell { background: #374151 !important; color: #9ca3af; font-weight: bold; }
+                </style>
+                <div class="week-container">
+                <table class="week-table">
+                <thead>
+                    <tr>
+                        <th>Week</th>
+                        <th>Trips</th>
+                        <th>Cars</th>
+                        <th>🟢 Green</th>
+                        <th>Green %</th>
+                        <th>🟡 Amber</th>
+                        <th>Amber %</th>
+                        <th>🔴 Red</th>
+                        <th>Red %</th>
+                        <th>⚫ Not Profit</th>
+                        <th>Not Profit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                """
+
+                for _, row in week_summary.iterrows():
+                    week_html += f"""
+                    <tr>
+                        <td>{row['Week_Label']}</td>
+                        <td>{int(row['Trips'])}</td>
+                        <td>{int(row['Cars'])}</td>
+                        <td class="green-cell">{int(row['Green'])}</td>
+                        <td class="green-cell">{row['Green%']}%</td>
+                        <td class="amber-cell">{int(row['Amber'])}</td>
+                        <td class="amber-cell">{row['Amber%']}%</td>
+                        <td class="red-cell">{int(row['Red'])}</td>
+                        <td class="red-cell">{row['Red%']}%</td>
+                        <td class="gray-cell">{int(row['NotProfitable'])}</td>
+                        <td class="gray-cell">{row['NotProfit%']}%</td>
+                    </tr>
+                    """
+
+                # Add total row
+                total_trips = week_summary['Trips'].sum()
+                total_cars = week_summary['Cars'].sum()
+                total_green = week_summary['Green'].sum()
+                total_amber = week_summary['Amber'].sum()
+                total_red = week_summary['Red'].sum()
+                total_not_profit = week_summary['NotProfitable'].sum()
+
+                week_html += f"""
+                <tr style="font-weight: bold; border-top: 3px solid #60a5fa;">
+                    <td style="background: #1e40af !important; color: #ffffff; font-size: 13px;">📊 Total</td>
+                    <td style="background: #1e40af !important; color: #ffffff; font-size: 13px;">{int(total_trips)}</td>
+                    <td style="background: #1e40af !important; color: #ffffff; font-size: 13px;">{int(total_cars)}</td>
+                    <td class="green-cell" style="font-size: 13px;">{int(total_green)}</td>
+                    <td class="green-cell" style="font-size: 13px;">{(total_green/total_trips*100):.1f}%</td>
+                    <td class="amber-cell" style="font-size: 13px;">{int(total_amber)}</td>
+                    <td class="amber-cell" style="font-size: 13px;">{(total_amber/total_trips*100):.1f}%</td>
+                    <td class="red-cell" style="font-size: 13px;">{int(total_red)}</td>
+                    <td class="red-cell" style="font-size: 13px;">{(total_red/total_trips*100):.1f}%</td>
+                    <td class="gray-cell" style="font-size: 13px;">{int(total_not_profit)}</td>
+                    <td class="gray-cell" style="font-size: 13px;">{(total_not_profit/total_trips*100):.1f}%</td>
+                </tr>
+                """
+
+                week_html += "</tbody></table></div>"
+
+                import streamlit.components.v1 as components
+                components.html(week_html, height=min(len(week_summary) * 45 + 100, 400), scrolling=True)
 
                 st.markdown("---")
                 st.markdown("#### Trip Profitability Details")
