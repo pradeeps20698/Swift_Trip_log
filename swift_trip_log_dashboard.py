@@ -1722,7 +1722,7 @@ def main():
 
             # Filter dropdown
             st.markdown("#### Details by Category")
-            col_filter, col_empty = st.columns([1, 3])
+            col_filter, col_download, col_empty = st.columns([1, 0.5, 2.5])
             with col_filter:
                 category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
@@ -1748,6 +1748,47 @@ def main():
             if len(filtered_df) > 0:
                 # Sort by LoadingDate ascending
                 filtered_df = filtered_df.sort_values('LoadingDate', ascending=True)
+
+                # Prepare download data with same formatting as table
+                download_data = []
+                total_freight_dl = 0
+                total_qty_dl = 0
+                for idx, (_, row) in enumerate(filtered_df.iterrows(), 1):
+                    date_str = row['LoadingDate'].strftime('%d/%m/%Y') if pd.notna(row['LoadingDate']) else ''
+                    freight = row['Freight'] if pd.notna(row['Freight']) else 0
+                    qty = int(row['CarQty']) if pd.notna(row['CarQty']) else 0
+                    total_freight_dl += freight
+                    total_qty_dl += qty
+                    download_data.append({
+                        'S.No.': idx,
+                        'Vehicle No': row['VehicleNo'],
+                        'Date': date_str,
+                        'Route': row['Route'],
+                        'Freight': f"₹{freight:,.0f}",
+                        'Qty': qty
+                    })
+                # Add Grand Total row
+                download_data.append({
+                    'S.No.': '',
+                    'Vehicle No': '',
+                    'Date': '',
+                    'Route': 'Grand Total',
+                    'Freight': f"₹{total_freight_dl:,.0f}",
+                    'Qty': total_qty_dl
+                })
+                download_df = pd.DataFrame(download_data)
+
+                # Add download button
+                with col_download:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    csv_data = download_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download",
+                        data=csv_data,
+                        file_name=f"{selected_category.replace(' ', '_')}_details.csv",
+                        mime="text/csv",
+                        key="local_category_download"
+                    )
 
                 # Build details table
                 details_html = """
@@ -3004,6 +3045,163 @@ def main():
 
                 import streamlit.components.v1 as components
                 components.html(week_html, height=min(len(week_summary) * 45 + 100, 400), scrolling=True)
+
+                # Branch-wise Summary
+                st.markdown("#### Branch-wise Summary")
+
+                # Branch mapping function
+                def get_branch(origin):
+                    if pd.isna(origin) or origin == '':
+                        return 'Market Load'
+                    origin_upper = str(origin).upper().strip()
+
+                    # Define branch mappings
+                    branch_mappings = {
+                        'NASHIK': 'Nashik',
+                        'PUNE': 'Pune',
+                        'TALEGAON': 'Pune',
+                        'HARIDWAR': 'Haridwar',
+                        'ANANTPUR': 'Anantpur',
+                        'ANANTAPUR': 'Anantpur',
+                        'KIA': 'Anantpur',
+                        'PATNA': 'Patna',
+                        'CHENNAI': 'Chennai',
+                        'HYUNDAI': 'Chennai',
+                        'BANGLORE': 'Banglore',
+                        'BANGALORE': 'Banglore',
+                        'BENGALURU': 'Banglore',
+                        'SANAND': 'Sanand',
+                        'ZAHEERABAD': 'Zaheerabad',
+                        'FARIDABAD': 'Faridabad',
+                        'TAPUKERA': 'Tapukera',
+                        'TAPUKARA': 'Tapukera',
+                        'BECHRAJI': 'Bechraji',
+                        'GURGAON': 'Gurgaon',
+                        'GURUGRAM': 'Gurgaon',
+                        'DELHI': 'Gurgaon',
+                        'JAMALPUR': 'Gurgaon',
+                        'NOIDA': 'Gurgaon',
+                        'RANJANGAON': 'Ranjangaon',
+                        'HALOL': 'Halol',
+                        'BIDADI': 'Banglore',
+                    }
+
+                    # Check for exact or partial match
+                    for key, branch in branch_mappings.items():
+                        if key in origin_upper:
+                            return branch
+
+                    return 'Market Load'
+
+                # Add branch column
+                branch_df = round_df.copy()
+                # Extract origin from Loaded_Route (first part before ' - ')
+                branch_df['Origin'] = branch_df['Loaded_Route'].apply(lambda x: str(x).split(' - ')[0] if pd.notna(x) else '')
+                branch_df['Branch'] = branch_df['Origin'].apply(get_branch)
+                branch_df['ProfitCategory'] = branch_df.apply(get_profit_category, axis=1)
+
+                # Group by branch
+                branch_summary = branch_df.groupby('Branch').agg(
+                    Trips=('VehicleNo', 'count'),
+                    Cars=('Loaded_Cars', 'sum'),
+                    Green=('ProfitCategory', lambda x: (x == 'Green').sum()),
+                    Amber=('ProfitCategory', lambda x: (x == 'Amber').sum()),
+                    Red=('ProfitCategory', lambda x: (x == 'Red').sum()),
+                    NotProfitable=('ProfitCategory', lambda x: (x == 'NotProfitable').sum())
+                ).reset_index()
+
+                # Define branch order
+                branch_order = ['Nashik', 'Pune', 'Haridwar', 'Anantpur', 'Patna', 'Chennai',
+                               'Banglore', 'Sanand', 'Zaheerabad', 'Faridabad', 'Tapukera',
+                               'Bechraji', 'Gurgaon', 'Ranjangaon', 'Halol', 'Market Load']
+                branch_summary['BranchOrder'] = branch_summary['Branch'].apply(
+                    lambda x: branch_order.index(x) if x in branch_order else 999
+                )
+                branch_summary = branch_summary.sort_values('BranchOrder')
+
+                # Calculate percentages
+                branch_summary['Green%'] = (branch_summary['Green'] / branch_summary['Trips'] * 100).round(1)
+                branch_summary['Amber%'] = (branch_summary['Amber'] / branch_summary['Trips'] * 100).round(1)
+                branch_summary['Red%'] = (branch_summary['Red'] / branch_summary['Trips'] * 100).round(1)
+                branch_summary['NotProfit%'] = (branch_summary['NotProfitable'] / branch_summary['Trips'] * 100).round(1)
+
+                # Create HTML table for branch summary
+                branch_html = """
+                <style>
+                    .branch-container { background-color: #0e1117; padding: 5px; }
+                    .branch-table { width: 100%; border-collapse: collapse; font-family: sans-serif; font-size: 12px; background-color: #0e1117; }
+                    .branch-table th { background: #1e3a5f; color: #ffffff; padding: 8px; text-align: center; border-bottom: 2px solid #2d5a8b; }
+                    .branch-table td { padding: 6px 8px; border-bottom: 1px solid #2d3748; text-align: center; color: #ffffff; background-color: #1a1a2e; }
+                    .branch-table tr:hover td { background: #252540; }
+                    .branch-green { background: #166534 !important; color: #ffffff; font-weight: bold; }
+                    .branch-amber { background: #b45309 !important; color: #ffffff; font-weight: bold; }
+                    .branch-red { background: #991b1b !important; color: #ffffff; font-weight: bold; }
+                    .branch-gray { background: #374151 !important; color: #9ca3af; font-weight: bold; }
+                </style>
+                <div class="branch-container">
+                <table class="branch-table">
+                <thead>
+                    <tr>
+                        <th>Branch</th>
+                        <th>Trips</th>
+                        <th>Cars</th>
+                        <th>🟢 Green</th>
+                        <th>Green %</th>
+                        <th>🟡 Amber</th>
+                        <th>Amber %</th>
+                        <th>🔴 Red</th>
+                        <th>Red %</th>
+                        <th>⚫ Not Profit</th>
+                        <th>Not Profit %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                """
+
+                for _, row in branch_summary.iterrows():
+                    branch_html += f"""
+                    <tr>
+                        <td style="text-align: left; font-weight: bold;">{row['Branch']}</td>
+                        <td>{int(row['Trips'])}</td>
+                        <td>{int(row['Cars'])}</td>
+                        <td class="branch-green">{int(row['Green'])}</td>
+                        <td class="branch-green">{row['Green%']}%</td>
+                        <td class="branch-amber">{int(row['Amber'])}</td>
+                        <td class="branch-amber">{row['Amber%']}%</td>
+                        <td class="branch-red">{int(row['Red'])}</td>
+                        <td class="branch-red">{row['Red%']}%</td>
+                        <td class="branch-gray">{int(row['NotProfitable'])}</td>
+                        <td class="branch-gray">{row['NotProfit%']}%</td>
+                    </tr>
+                    """
+
+                # Add total row for branch summary
+                branch_total_trips = branch_summary['Trips'].sum()
+                branch_total_cars = branch_summary['Cars'].sum()
+                branch_total_green = branch_summary['Green'].sum()
+                branch_total_amber = branch_summary['Amber'].sum()
+                branch_total_red = branch_summary['Red'].sum()
+                branch_total_not_profit = branch_summary['NotProfitable'].sum()
+
+                branch_html += f"""
+                <tr style="font-weight: bold; border-top: 3px solid #60a5fa;">
+                    <td style="background: #1e40af !important; color: #ffffff; font-size: 13px; text-align: left;">📊 Total</td>
+                    <td style="background: #1e40af !important; color: #ffffff; font-size: 13px;">{int(branch_total_trips)}</td>
+                    <td style="background: #1e40af !important; color: #ffffff; font-size: 13px;">{int(branch_total_cars)}</td>
+                    <td class="branch-green" style="font-size: 13px;">{int(branch_total_green)}</td>
+                    <td class="branch-green" style="font-size: 13px;">{(branch_total_green/branch_total_trips*100):.1f}%</td>
+                    <td class="branch-amber" style="font-size: 13px;">{int(branch_total_amber)}</td>
+                    <td class="branch-amber" style="font-size: 13px;">{(branch_total_amber/branch_total_trips*100):.1f}%</td>
+                    <td class="branch-red" style="font-size: 13px;">{int(branch_total_red)}</td>
+                    <td class="branch-red" style="font-size: 13px;">{(branch_total_red/branch_total_trips*100):.1f}%</td>
+                    <td class="branch-gray" style="font-size: 13px;">{int(branch_total_not_profit)}</td>
+                    <td class="branch-gray" style="font-size: 13px;">{(branch_total_not_profit/branch_total_trips*100):.1f}%</td>
+                </tr>
+                """
+
+                branch_html += "</tbody></table></div>"
+
+                components.html(branch_html, height=min(len(branch_summary) * 40 + 100, 600), scrolling=True)
 
                 st.markdown("---")
                 st.markdown("#### Trip Profitability Details")
