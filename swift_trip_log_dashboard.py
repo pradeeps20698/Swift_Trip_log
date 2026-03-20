@@ -242,7 +242,7 @@ def load_vehicles_by_type(vehicle_type):
 
         query = f"""
             SELECT vehicle_no FROM swift_vehicles
-            WHERE vehicle_type = '{vehicle_type}' AND (is_active = true OR is_active = 'Yes' OR is_active = 'Y')
+            WHERE vehicle_type = '{vehicle_type}' AND is_active IN ('Yes', 'Y', 'True', 'true')
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
