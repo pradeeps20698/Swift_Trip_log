@@ -107,6 +107,7 @@ def load_triplog_data():
             SELECT * FROM swift_trip_log
             WHERE loading_date IS NOT NULL
               AND loading_date::date <= CURRENT_DATE
+              AND is_active = true
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -242,7 +243,7 @@ def load_vehicles_by_type(vehicle_type):
 
         query = f"""
             SELECT vehicle_no FROM swift_vehicles
-            WHERE vehicle_type = '{vehicle_type}' AND is_active IN ('Yes', 'Y', 'True', 'true')
+            WHERE vehicle_type = '{vehicle_type}' AND (is_active = true OR is_active = 'Yes')
         """
         df = pd.read_sql_query(query, conn)
         conn.close()
@@ -2612,6 +2613,7 @@ def main():
                         WHERE route IS NOT NULL
                             AND route LIKE '%-%'
                             AND distance > 0
+                            AND is_active = true
                         GROUP BY UPPER(TRIM(SPLIT_PART(route, ' - ', 1))), UPPER(TRIM(SPLIT_PART(route, ' - ', 2))), trip_status
                         HAVING COUNT(*) >= 1
                     """
