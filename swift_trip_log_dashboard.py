@@ -3208,6 +3208,23 @@ def main():
                 st.markdown("---")
                 st.markdown("#### Trip Profitability Details")
 
+                # Add color priority for sorting: green=0, amber=1, red=2, not_profitable=3
+                def get_color_priority(row):
+                    if row['Status'] == 'DC Movement':
+                        return 0  # DC Movement is always green
+                    per_day = row['Per_Day_Contribution']
+                    if per_day >= 7000:
+                        return 0  # Green
+                    elif per_day >= 5000:
+                        return 1  # Amber
+                    elif per_day >= 3000:
+                        return 2  # Red
+                    else:
+                        return 3  # Not profitable
+
+                round_df['Color_Priority'] = round_df.apply(get_color_priority, axis=1)
+                round_df = round_df.sort_values('Color_Priority').reset_index(drop=True)
+
                 # Create export DataFrame for download
                 export_df = round_df.copy()
                 export_df['Date'] = pd.to_datetime(export_df['Loaded_Date']).dt.strftime('%d-%b-%Y')
@@ -3224,13 +3241,89 @@ def main():
                                       'Cars', 'Revenue (K)', 'Distance', 'Expense (K)',
                                       'Contribution (K)', 'Days', 'Per Day', 'Status']
 
-                # Download button
-                csv = export_cols.to_csv(index=False)
+                # Download button with Excel color coding
+                from io import BytesIO
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+                # Create Excel file with color coding
+                output = BytesIO()
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Trip Profitability"
+
+                # Define colors
+                green_fill = PatternFill(start_color="166534", end_color="166534", fill_type="solid")
+                amber_fill = PatternFill(start_color="B45309", end_color="B45309", fill_type="solid")
+                red_fill = PatternFill(start_color="991B1B", end_color="991B1B", fill_type="solid")
+                gray_fill = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+                header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+                white_font = Font(color="FFFFFF", bold=True)
+                center_align = Alignment(horizontal="center", vertical="center")
+                thin_border = Border(
+                    left=Side(style='thin'),
+                    right=Side(style='thin'),
+                    top=Side(style='thin'),
+                    bottom=Side(style='thin')
+                )
+
+                # Write headers
+                headers = list(export_cols.columns)
+                for col_idx, header in enumerate(headers, 1):
+                    cell = ws.cell(row=1, column=col_idx, value=header)
+                    cell.fill = header_fill
+                    cell.font = white_font
+                    cell.alignment = center_align
+                    cell.border = thin_border
+
+                # Write data with color coding
+                for row_idx, (_, row) in enumerate(export_df.iterrows(), 2):
+                    per_day = row['Per_Day_Contribution']
+                    status = row['Status']
+
+                    # Determine color based on per_day value
+                    if status == 'DC Movement':
+                        per_day_fill = green_fill
+                    elif per_day >= 7000:
+                        per_day_fill = green_fill
+                    elif per_day >= 5000:
+                        per_day_fill = amber_fill
+                    elif per_day >= 3000:
+                        per_day_fill = red_fill
+                    else:
+                        per_day_fill = gray_fill
+
+                    # Write row data
+                    row_data = [
+                        row['VehicleNo'], row['Date'], row['Loaded_Route'], row['Loaded_Party'],
+                        row['Empty_Route'], row['Loaded_Cars'], round(row['Revenue_K'], 1),
+                        row['Total_Distance'], round(row['Expense_K'], 1), round(row['Contribution_K'], 1),
+                        row['Calc_Days'], round(row['Per_Day'], 0), row['Status']
+                    ]
+
+                    for col_idx, value in enumerate(row_data, 1):
+                        cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                        cell.border = thin_border
+                        cell.alignment = center_align
+
+                        # Apply color to Per Day column (column 12)
+                        if col_idx == 12:
+                            cell.fill = per_day_fill
+                            cell.font = white_font
+
+                # Adjust column widths
+                column_widths = [12, 12, 25, 30, 25, 6, 12, 10, 12, 12, 6, 10, 12]
+                for col_idx, width in enumerate(column_widths, 1):
+                    ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
+
+                wb.save(output)
+                output.seek(0)
+
                 st.download_button(
                     label="📥 Download Trip Profitability Data",
-                    data=csv,
-                    file_name="trip_profitability.csv",
-                    mime="text/csv",
+                    data=output,
+                    file_name="trip_profitability.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
                 # Create HTML table with color coding
