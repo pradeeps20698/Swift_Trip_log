@@ -3252,11 +3252,10 @@ def main():
                 ws = wb.active
                 ws.title = "Trip Profitability"
 
-                # Define colors
-                green_fill = PatternFill(start_color="166534", end_color="166534", fill_type="solid")
-                amber_fill = PatternFill(start_color="B45309", end_color="B45309", fill_type="solid")
-                red_fill = PatternFill(start_color="991B1B", end_color="991B1B", fill_type="solid")
-                gray_fill = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+                # Define colors (light green, orange, light red, no color for not profitable)
+                green_fill = PatternFill(start_color="92D050", end_color="92D050", fill_type="solid")
+                amber_fill = PatternFill(start_color="FF9900", end_color="FF9900", fill_type="solid")
+                red_fill = PatternFill(start_color="FF6B6B", end_color="FF6B6B", fill_type="solid")
                 header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
                 white_font = Font(color="FFFFFF", bold=True)
                 center_align = Alignment(horizontal="center", vertical="center")
@@ -3291,7 +3290,7 @@ def main():
                     elif per_day >= 3000:
                         per_day_fill = red_fill
                     else:
-                        per_day_fill = gray_fill
+                        per_day_fill = None  # No color for not profitable
 
                     # Write row data
                     row_data = [
@@ -3307,9 +3306,9 @@ def main():
                         cell.alignment = center_align
 
                         # Apply color to Per Day column (column 12)
-                        if col_idx == 12:
+                        if col_idx == 12 and per_day_fill:
                             cell.fill = per_day_fill
-                            cell.font = white_font
+                            cell.font = Font(color="000000", bold=True)  # Black text for light colors
 
                 # Adjust column widths
                 column_widths = [12, 12, 25, 30, 25, 6, 12, 10, 12, 12, 6, 10, 12]
