@@ -20,6 +20,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Require login + dashboard permission
+from swift_auth_child import require_dashboard_access
+_auth_user = require_dashboard_access("trip_log")
+
 # No full page auto-refresh - using @st.fragment with run_every for each section
 
 # Custom CSS
