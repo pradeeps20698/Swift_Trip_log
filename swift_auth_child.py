@@ -39,7 +39,7 @@ def _block_with_hub_redirect() -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.link_button("Open Swift Hub →", SWIFT_HUB_URL)
+    st.link_button("Open Swift Hub →", SWIFT_HUB_URL, type="primary")
     st.markdown(
         f"<p style='margin-top:12px;font-size:13px;color:#666'>"
         f"<a href='{SWIFT_HUB_URL}' target='_blank' rel='noopener' "
