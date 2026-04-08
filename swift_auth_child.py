@@ -32,16 +32,25 @@ def _block_with_hub_redirect() -> None:
     """Show an 'Access via Swift Hub' page with a working link."""
     st.markdown(
         """
-        <h1 style="font-size:38px;margin-top:40px">🔒 Access via Swift Hub</h1>
-        <p style="color:#888;font-size:18px;margin-bottom:32px">
-          This dashboard can only be opened from Swift Hub.
-        </p>
+        <div style="text-align:center;margin-top:60px">
+          <h1 style="font-size:38px">🔒 Access via Swift Hub</h1>
+          <p style="color:#888;font-size:18px;margin-bottom:32px">
+            This dashboard can only be opened from Swift Hub.
+          </p>
+        </div>
         """,
         unsafe_allow_html=True,
     )
-    st.link_button("Open Swift Hub →", SWIFT_HUB_URL, type="primary")
+    _l, c, _r = st.columns([2, 1, 2])
+    with c:
+        st.link_button(
+            "Open Swift Hub →",
+            SWIFT_HUB_URL,
+            type="primary",
+            use_container_width=True,
+        )
     st.markdown(
-        f"<p style='margin-top:12px;font-size:13px;color:#666'>"
+        f"<p style='text-align:center;margin-top:12px;font-size:13px;color:#666'>"
         f"<a href='{SWIFT_HUB_URL}' target='_blank' rel='noopener' "
         f"style='color:#888;text-decoration:underline'>{SWIFT_HUB_URL}</a></p>",
         unsafe_allow_html=True,
