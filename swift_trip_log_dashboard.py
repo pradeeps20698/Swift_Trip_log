@@ -1206,7 +1206,7 @@ def main():
                 n_rows = len(rows_data)
                 # Landscape width, dynamic height based on content
                 fig_width = 11.69
-                fig_height = (n_rows + 2) * rh + 1.6
+                fig_height = (n_rows + 2) * rh + 1.2
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
