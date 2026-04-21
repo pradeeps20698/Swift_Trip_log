@@ -1237,33 +1237,33 @@ def main():
                 table_top = y + h2
 
                 # Client-Wise (merged 2 rows)
-                ax.add_patch(plt.Rectangle((col_x[0], y), col_w[0], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.add_patch(plt.Rectangle((col_x[0], y), col_w[0], h2, facecolor="#1e3a5f", edgecolor="#6a7a8a", lw=1.0))
                 ax.text(col_x[0] + col_w[0]/2, y + h2/2, "Client - Wise", fontsize=8, fontweight="bold", color="white", ha="center", va="center")
 
                 # Target SOB (merged 2 rows)
-                ax.add_patch(plt.Rectangle((col_x[1], y), col_w[1], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.add_patch(plt.Rectangle((col_x[1], y), col_w[1], h2, facecolor="#1e3a5f", edgecolor="#6a7a8a", lw=1.0))
                 ax.text(col_x[1] + col_w[1]/2, y + h2/2, "Target\nSOB", fontsize=7, fontweight="bold", color="white", ha="center", va="center")
 
                 # No. of Cars (top row, spans 3)
                 cars_w = col_w[2] + col_w[3] + col_w[4]
-                ax.add_patch(plt.Rectangle((col_x[2], y + rh), cars_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.add_patch(plt.Rectangle((col_x[2], y + rh), cars_w, rh, facecolor="#1e3a5f", edgecolor="#6a7a8a", lw=1.0))
                 ax.text(col_x[2] + cars_w/2, y + rh + rh/2, "No. of Cars", fontsize=8, fontweight="bold", color="white", ha="center", va="center")
 
                 # Freight (top row, spans 3)
                 freight_w = col_w[5] + col_w[6] + col_w[7]
-                ax.add_patch(plt.Rectangle((col_x[5], y + rh), freight_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.add_patch(plt.Rectangle((col_x[5], y + rh), freight_w, rh, facecolor="#1e3a5f", edgecolor="#6a7a8a", lw=1.0))
                 ax.text(col_x[5] + freight_w/2, y + rh + rh/2, "Freight (\u20b9 Lakhs)", fontsize=8, fontweight="bold", color="white", ha="center", va="center")
 
                 # Comparison (top row, spans 2)
                 comp_w = col_w[8] + col_w[9]
-                ax.add_patch(plt.Rectangle((col_x[8], y + rh), comp_w, rh, facecolor="#0e4a6f", edgecolor="#2d3748", lw=0.8))
+                ax.add_patch(plt.Rectangle((col_x[8], y + rh), comp_w, rh, facecolor="#0e4a6f", edgecolor="#6a7a8a", lw=1.0))
                 ax.text(col_x[8] + comp_w/2, y + rh + rh/2, f"Comparison\n({compare_label})", fontsize=6.5, fontweight="bold", color="white", ha="center", va="center")
 
                 # Sub-headers
                 sub_labels = ["", "", "Own", "Vendor", "Total", "Own", "Vendor", "Total", "Cars", "Freight"]
                 for j, (cxj, cwj, sl) in enumerate(zip(col_x, col_w, sub_labels)):
                     if sl:
-                        ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#16213e", edgecolor="#2d3748", lw=0.8))
+                        ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#16213e", edgecolor="#6a7a8a", lw=1.0))
                         ax.text(cxj + cwj/2, y + rh/2, sl, fontsize=7, fontweight="bold", color="#b0b0b0", ha="center", va="center")
 
                 # Data rows
@@ -1295,7 +1295,7 @@ def main():
                         f"\u20b9{row['Freight_Comp']/100000:.2f}",
                     ]
 
-                    ec = "#4a5568" if not is_grand else "#3b82f6"
+                    ec = "#8899aa" if not is_grand else "#3b82f6"
                     for j, (cxj, cwj, val) in enumerate(zip(col_x, col_w, vals)):
                         ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor=bg, edgecolor=ec, lw=0.5))
                         ha = "left" if j == 0 else ("right" if j >= 5 else "center")
