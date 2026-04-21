@@ -1206,7 +1206,7 @@ def main():
                 n_rows = len(rows_data)
                 # Landscape width, dynamic height based on content
                 fig_width = 11.69
-                fig_height = (n_rows + 2) * rh + 0.9
+                fig_height = (n_rows + 2) * rh + 1.4
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
@@ -1228,7 +1228,9 @@ def main():
                 total_w = sum(col_w)
 
                 # Title
-                y = fig_height - 0.05
+                y = fig_height - 0.1
+                ax.text(x0, y, "Swift Road Link Pvt. Ltd. - Target vs Actual", fontsize=11, fontweight="bold", color="#aaaaaa", va="top")
+                y -= 0.35
                 ax.text(x0, y, title_str, fontsize=14, fontweight="bold", color="white", va="top")
 
                 # Header rows
