@@ -1200,10 +1200,13 @@ def main():
             # PDF Download Button
             def generate_pdf(rows_data, grand_data, title_str, compare_label, avg_val, shortfall_val, cat_colors):
                 """Generate PDF of Target vs Actual table matching dashboard style."""
-                rh = 0.38
+                from matplotlib.backends.backend_pdf import PdfPages
+
+                rh = 0.30
                 n_rows = len(rows_data)
-                fig_width = 24
-                fig_height = (n_rows + 2) * rh + 2.0
+                # A4 landscape: 11.69 x 8.27 inches
+                fig_width = 11.69
+                fig_height = 8.27
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
@@ -1211,9 +1214,12 @@ def main():
                 ax.axis("off")
                 fig.patch.set_facecolor("#0e1117")
 
-                # Column positions (10 columns: Client, Target, Own, Vendor, Total, Own_F, Vendor_F, Total_F, Cars_Comp, Freight_Comp)
-                x0 = 0.2
-                col_w = [5.2, 1.6, 1.3, 1.3, 1.5, 2.0, 2.0, 2.0, 1.8, 2.0]
+                # Column widths scaled to fit A4 landscape
+                x0 = 0.15
+                usable = fig_width - 0.3
+                # proportions: Client(28%), Target(8%), Own(6%), Vendor(6%), Total(7%), Own_F(10%), Vendor_F(10%), Total_F(10%), Cars_Comp(7%), Freight_Comp(8%)
+                proportions = [0.28, 0.08, 0.06, 0.06, 0.07, 0.09, 0.09, 0.09, 0.08, 0.10]
+                col_w = [usable * p for p in proportions]
                 col_x = []
                 cx = x0
                 for w in col_w:
@@ -1223,42 +1229,42 @@ def main():
 
                 # Title
                 y = fig_height - 0.15
-                ax.text(x0, y, title_str, fontsize=18, fontweight="bold", color="white", va="top")
+                ax.text(x0, y, title_str, fontsize=14, fontweight="bold", color="white", va="top")
 
-                # Header row 1
-                y -= 0.9
+                # Header rows
+                y -= 0.55
                 h2 = rh * 2
                 table_top = y + h2
 
                 # Client-Wise (merged 2 rows)
-                ax.add_patch(plt.Rectangle((col_x[0], y), col_w[0], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
-                ax.text(col_x[0] + col_w[0]/2, y + h2/2, "Client - Wise", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+                ax.add_patch(plt.Rectangle((col_x[0], y), col_w[0], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.text(col_x[0] + col_w[0]/2, y + h2/2, "Client - Wise", fontsize=8, fontweight="bold", color="white", ha="center", va="center")
 
                 # Target SOB (merged 2 rows)
-                ax.add_patch(plt.Rectangle((col_x[1], y), col_w[1], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
-                ax.text(col_x[1] + col_w[1]/2, y + h2/2, "Target SOB", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+                ax.add_patch(plt.Rectangle((col_x[1], y), col_w[1], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.text(col_x[1] + col_w[1]/2, y + h2/2, "Target\nSOB", fontsize=7, fontweight="bold", color="white", ha="center", va="center")
 
                 # No. of Cars (top row, spans 3)
                 cars_w = col_w[2] + col_w[3] + col_w[4]
-                ax.add_patch(plt.Rectangle((col_x[2], y + rh), cars_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
-                ax.text(col_x[2] + cars_w/2, y + rh + rh/2, "No. of Cars", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+                ax.add_patch(plt.Rectangle((col_x[2], y + rh), cars_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.text(col_x[2] + cars_w/2, y + rh + rh/2, "No. of Cars", fontsize=8, fontweight="bold", color="white", ha="center", va="center")
 
                 # Freight (top row, spans 3)
                 freight_w = col_w[5] + col_w[6] + col_w[7]
-                ax.add_patch(plt.Rectangle((col_x[5], y + rh), freight_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
-                ax.text(col_x[5] + freight_w/2, y + rh + rh/2, "Freight (\u20b9 Lakhs)", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+                ax.add_patch(plt.Rectangle((col_x[5], y + rh), freight_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=0.8))
+                ax.text(col_x[5] + freight_w/2, y + rh + rh/2, "Freight (\u20b9 Lakhs)", fontsize=8, fontweight="bold", color="white", ha="center", va="center")
 
                 # Comparison (top row, spans 2)
                 comp_w = col_w[8] + col_w[9]
-                ax.add_patch(plt.Rectangle((col_x[8], y + rh), comp_w, rh, facecolor="#0e4a6f", edgecolor="#2d3748", lw=1.0))
-                ax.text(col_x[8] + comp_w/2, y + rh + rh/2, f"Comparison ({compare_label})", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+                ax.add_patch(plt.Rectangle((col_x[8], y + rh), comp_w, rh, facecolor="#0e4a6f", edgecolor="#2d3748", lw=0.8))
+                ax.text(col_x[8] + comp_w/2, y + rh + rh/2, f"Comparison\n({compare_label})", fontsize=6.5, fontweight="bold", color="white", ha="center", va="center")
 
                 # Sub-headers
                 sub_labels = ["", "", "Own", "Vendor", "Total", "Own", "Vendor", "Total", "Cars", "Freight"]
                 for j, (cxj, cwj, sl) in enumerate(zip(col_x, col_w, sub_labels)):
                     if sl:
-                        ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#16213e", edgecolor="#2d3748", lw=1.0))
-                        ax.text(cxj + cwj/2, y + rh/2, sl, fontsize=10, fontweight="bold", color="#b0b0b0", ha="center", va="center")
+                        ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#16213e", edgecolor="#2d3748", lw=0.8))
+                        ax.text(cxj + cwj/2, y + rh/2, sl, fontsize=7, fontweight="bold", color="#b0b0b0", ha="center", va="center")
 
                 # Data rows
                 y -= rh
@@ -1293,26 +1299,27 @@ def main():
                     for j, (cxj, cwj, val) in enumerate(zip(col_x, col_w, vals)):
                         ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor=bg, edgecolor=ec, lw=0.5))
                         ha = "left" if j == 0 else ("right" if j >= 5 else "center")
-                        xt = cxj + 0.1 if j == 0 else (cxj + cwj - 0.1 if j >= 5 else cxj + cwj/2)
+                        xt = cxj + 0.08 if j == 0 else (cxj + cwj - 0.08 if j >= 5 else cxj + cwj/2)
                         fw = "bold" if is_total or is_grand else "normal"
-                        ax.text(xt, y + rh/2, val, fontsize=9.5 if is_total else 9, fontweight=fw, color=tc, ha=ha, va="center")
+                        fs = 7 if is_total else 6.5
+                        ax.text(xt, y + rh/2, val, fontsize=fs, fontweight=fw, color=tc, ha=ha, va="center")
                     y -= rh
 
                 # Outer border
                 table_bottom = y + rh
-                ax.add_patch(plt.Rectangle((x0, table_bottom), total_w, table_top - table_bottom, facecolor="none", edgecolor="#4a5568", lw=2.0))
+                ax.add_patch(plt.Rectangle((x0, table_bottom), total_w, table_top - table_bottom, facecolor="none", edgecolor="#4a5568", lw=1.5))
 
                 # Avg Per Day
-                y -= 0.15
+                y -= 0.08
                 avg_c = "#22c55e" if avg_val >= 0 else "#ef4444"
-                ax.text(x0, y, "Avg Per Day >>", fontsize=11, color="#aaaaaa", va="top")
-                ax.text(col_x[7], y, f"\u20b9{avg_val:.2f} L", fontsize=11, color=avg_c, fontweight="bold", va="top")
+                ax.text(x0, y, "Avg Per Day >>", fontsize=8, color="#aaaaaa", va="top")
+                ax.text(col_x[5], y, f"\u20b9{avg_val:.2f} L", fontsize=8, color=avg_c, fontweight="bold", va="top")
 
                 # Shortfall
-                y -= 0.35
+                y -= 0.22
                 sf_c = "#22c55e" if shortfall_val >= 0 else "#ef4444"
-                ax.text(x0, y, f"Shortfall from {compare_label} >>", fontsize=11, color="#aaaaaa", va="top")
-                ax.text(col_x[7], y, f"\u20b9{shortfall_val:.2f} L", fontsize=11, color=sf_c, fontweight="bold", va="top")
+                ax.text(x0, y, f"Shortfall from {compare_label} >>", fontsize=8, color="#aaaaaa", va="top")
+                ax.text(col_x[5], y, f"\u20b9{shortfall_val:.2f} L", fontsize=8, color=sf_c, fontweight="bold", va="top")
 
                 plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
                 buf = BytesIO()
