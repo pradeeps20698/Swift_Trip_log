@@ -1232,7 +1232,7 @@ def main():
                 ax.text(x0, y, title_str, fontsize=14, fontweight="bold", color="white", va="top")
 
                 # Header rows
-                y -= 0.55
+                y -= 0.75
                 h2 = rh * 2
                 table_top = y + h2
 
