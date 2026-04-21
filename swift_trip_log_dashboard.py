@@ -5,6 +5,10 @@ import json
 import psycopg2
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
+from io import BytesIO
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import os
 
 # Refresh intervals (in seconds)
@@ -1192,6 +1196,144 @@ def main():
             # Calculate dynamic height based on number of rows + summary rows
             table_height = 100 + (len(final_rows) * 35) + 100
             components.html(html_table, height=table_height, scrolling=False)
+
+            # PDF Download Button
+            def generate_pdf(rows_data, grand_data, title_str, compare_label, avg_val, shortfall_val, cat_colors):
+                """Generate PDF of Target vs Actual table matching dashboard style."""
+                rh = 0.38
+                n_rows = len(rows_data)
+                fig_width = 24
+                fig_height = (n_rows + 2) * rh + 2.0
+
+                fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+                ax.set_xlim(0, fig_width)
+                ax.set_ylim(0, fig_height)
+                ax.axis("off")
+                fig.patch.set_facecolor("#0e1117")
+
+                # Column positions (10 columns: Client, Target, Own, Vendor, Total, Own_F, Vendor_F, Total_F, Cars_Comp, Freight_Comp)
+                x0 = 0.2
+                col_w = [5.2, 1.6, 1.3, 1.3, 1.5, 2.0, 2.0, 2.0, 1.8, 2.0]
+                col_x = []
+                cx = x0
+                for w in col_w:
+                    col_x.append(cx)
+                    cx += w
+                total_w = sum(col_w)
+
+                # Title
+                y = fig_height - 0.15
+                ax.text(x0, y, title_str, fontsize=18, fontweight="bold", color="white", va="top")
+
+                # Header row 1
+                y -= 0.9
+                h2 = rh * 2
+                table_top = y + h2
+
+                # Client-Wise (merged 2 rows)
+                ax.add_patch(plt.Rectangle((col_x[0], y), col_w[0], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
+                ax.text(col_x[0] + col_w[0]/2, y + h2/2, "Client - Wise", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+
+                # Target SOB (merged 2 rows)
+                ax.add_patch(plt.Rectangle((col_x[1], y), col_w[1], h2, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
+                ax.text(col_x[1] + col_w[1]/2, y + h2/2, "Target SOB", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+
+                # No. of Cars (top row, spans 3)
+                cars_w = col_w[2] + col_w[3] + col_w[4]
+                ax.add_patch(plt.Rectangle((col_x[2], y + rh), cars_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
+                ax.text(col_x[2] + cars_w/2, y + rh + rh/2, "No. of Cars", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+
+                # Freight (top row, spans 3)
+                freight_w = col_w[5] + col_w[6] + col_w[7]
+                ax.add_patch(plt.Rectangle((col_x[5], y + rh), freight_w, rh, facecolor="#1e3a5f", edgecolor="#2d3748", lw=1.0))
+                ax.text(col_x[5] + freight_w/2, y + rh + rh/2, "Freight (\u20b9 Lakhs)", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+
+                # Comparison (top row, spans 2)
+                comp_w = col_w[8] + col_w[9]
+                ax.add_patch(plt.Rectangle((col_x[8], y + rh), comp_w, rh, facecolor="#0e4a6f", edgecolor="#2d3748", lw=1.0))
+                ax.text(col_x[8] + comp_w/2, y + rh + rh/2, f"Comparison ({compare_label})", fontsize=11, fontweight="bold", color="white", ha="center", va="center")
+
+                # Sub-headers
+                sub_labels = ["", "", "Own", "Vendor", "Total", "Own", "Vendor", "Total", "Cars", "Freight"]
+                for j, (cxj, cwj, sl) in enumerate(zip(col_x, col_w, sub_labels)):
+                    if sl:
+                        ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#16213e", edgecolor="#2d3748", lw=1.0))
+                        ax.text(cxj + cwj/2, y + rh/2, sl, fontsize=10, fontweight="bold", color="#b0b0b0", ha="center", va="center")
+
+                # Data rows
+                y -= rh
+                for row in rows_data:
+                    is_total = row['is_total']
+                    is_grand = row['category'] == 'Grand'
+
+                    if is_grand:
+                        bg = "#1e40af"
+                        tc = "#ffffff"
+                    elif is_total:
+                        bg = cat_colors.get(row['category'].replace(' - Total', '').strip(), "#d4a017")
+                        tc = "#000000"
+                    else:
+                        bg = "#0e1117"
+                        tc = "#ffffff"
+
+                    vals = [
+                        row['Client - Wise'],
+                        str(row['Target SQR']) if row['Target SQR'] else '',
+                        str(row['Own']),
+                        str(row['Vendor']),
+                        str(row['Total']),
+                        f"\u20b9{row['Own_F']/100000:.2f}",
+                        f"\u20b9{row['Vendor_F']/100000:.2f}",
+                        f"\u20b9{row['Total_F']/100000:.2f}",
+                        str(row['Cars_Comp']),
+                        f"\u20b9{row['Freight_Comp']/100000:.2f}",
+                    ]
+
+                    ec = "#4a5568" if not is_grand else "#3b82f6"
+                    for j, (cxj, cwj, val) in enumerate(zip(col_x, col_w, vals)):
+                        ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor=bg, edgecolor=ec, lw=0.5))
+                        ha = "left" if j == 0 else ("right" if j >= 5 else "center")
+                        xt = cxj + 0.1 if j == 0 else (cxj + cwj - 0.1 if j >= 5 else cxj + cwj/2)
+                        fw = "bold" if is_total or is_grand else "normal"
+                        ax.text(xt, y + rh/2, val, fontsize=9.5 if is_total else 9, fontweight=fw, color=tc, ha=ha, va="center")
+                    y -= rh
+
+                # Outer border
+                table_bottom = y + rh
+                ax.add_patch(plt.Rectangle((x0, table_bottom), total_w, table_top - table_bottom, facecolor="none", edgecolor="#4a5568", lw=2.0))
+
+                # Avg Per Day
+                y -= 0.15
+                avg_c = "#22c55e" if avg_val >= 0 else "#ef4444"
+                ax.text(x0, y, "Avg Per Day >>", fontsize=11, color="#aaaaaa", va="top")
+                ax.text(col_x[7], y, f"\u20b9{avg_val:.2f} L", fontsize=11, color=avg_c, fontweight="bold", va="top")
+
+                # Shortfall
+                y -= 0.35
+                sf_c = "#22c55e" if shortfall_val >= 0 else "#ef4444"
+                ax.text(x0, y, f"Shortfall from {compare_label} >>", fontsize=11, color="#aaaaaa", va="top")
+                ax.text(col_x[7], y, f"\u20b9{shortfall_val:.2f} L", fontsize=11, color=sf_c, fontweight="bold", va="top")
+
+                plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+                buf = BytesIO()
+                fig.savefig(buf, format="pdf", bbox_inches="tight", pad_inches=0.1, facecolor=fig.get_facecolor())
+                plt.close(fig)
+                buf.seek(0)
+                return buf.getvalue()
+
+            pdf_data = generate_pdf(
+                final_rows, grand_total,
+                f"Till {till_date_display} \U0001f4ca",
+                f"Till {compare_date}",
+                avg_per_day, shortfall,
+                category_colors,
+            )
+            st.download_button(
+                label="\U0001f4e5 Download PDF",
+                data=pdf_data,
+                file_name=f"Swift_Target_vs_Actual_{till_date.strftime('%d_%b_%Y')}.pdf",
+                mime="application/pdf",
+            )
 
         target_vs_actual_fragment()
 
