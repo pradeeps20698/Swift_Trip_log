@@ -1206,7 +1206,7 @@ def main():
                 n_rows = len(rows_data)
                 # Landscape width, dynamic height based on content
                 fig_width = 11.69
-                fig_height = (n_rows + 2) * rh + 1.5
+                fig_height = (n_rows + 2) * rh + 1.9
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
@@ -1231,8 +1231,8 @@ def main():
                 y = fig_height - 0.1
                 ax.text(x0, y, f"Swift Road Link Pvt. Ltd. - Target vs Actual  |  {title_str}", fontsize=13, fontweight="bold", color="white", va="top")
 
-                # Header rows
-                y -= 0.7
+                # Header rows (title takes ~0.45 height at fontsize 13, add 0.15 gap)
+                y -= 1.1
                 h2 = rh * 2
                 table_top = y + h2
 
