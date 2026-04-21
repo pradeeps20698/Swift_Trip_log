@@ -1204,9 +1204,9 @@ def main():
 
                 rh = 0.30
                 n_rows = len(rows_data)
-                # A4 landscape: 11.69 x 8.27 inches
+                # Landscape width, dynamic height based on content
                 fig_width = 11.69
-                fig_height = 8.27
+                fig_height = (n_rows + 2) * rh + 1.6
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
