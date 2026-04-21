@@ -401,6 +401,178 @@ def remove_excluded_trip(trip_no):
         return False
 
 
+# ── Hire Vehicle → Vendor mapping (DB-backed + hardcoded fallback) ──────────
+VEHICLE_VENDOR_MAP_HARDCODED = {
+    "7401RJ14GT": "Ranjeet Singh Logistics", "7391RJ14GT": "Ranjeet Singh Logistics",
+    "7398RJ14GT": "Ranjeet Singh Logistics", "7399RJ14GT": "Ranjeet Singh Logistics",
+    "3847RJ25GA": "Ranjeet Singh Logistics", "3849RJ25GA": "Ranjeet Singh Logistics",
+    "3850RJ25GA": "Ranjeet Singh Logistics", "1379RJ14GU": "Ranjeet Singh Logistics",
+    "1383RJ14GU": "Ranjeet Singh Logistics", "1385RJ14GU": "Ranjeet Singh Logistics",
+    "1390RJ14GU": "Ranjeet Singh Logistics", "3145NL01AK": "Ranjeet Singh Logistics",
+    "3147NL01AK": "Ranjeet Singh Logistics", "3148NL01AK": "Ranjeet Singh Logistics",
+    "3146NL01AK": "Ranjeet Singh Logistics", "9263HR55AQ": "Ranjeet Singh Logistics",
+    "3350HR55AQ": "Ranjeet Singh Logistics", "4660HR55AN": "Ranjeet Singh Logistics",
+    "7919HR55AQ": "Ranjeet Singh Logistics", "5463HR55AM": "Ranjeet Singh Logistics",
+    "7527HR55AN": "Ranjeet Singh Logistics", "1115HR55AM": "Ranjeet Singh Logistics",
+    "9263HR55AQ-Rsai": "Ranjeet Singh Logistics", "5463HR55AM-Rsai": "Ranjeet Singh Logistics",
+    "1115HR55AM-Rsai": "Ranjeet Singh Logistics", "7627HR55AQ": "Ranjeet Singh Logistics",
+    "3067NL01AC": "Swaraj Enterprises", "6841NL01L": "Swaraj Enterprises",
+    "8906NL01Q": "Swaraj Enterprises", "0882NL01AB": "Swaraj Enterprises",
+    "3060NL01AC": "Swaraj Enterprises", "3073NL01AC": "Swaraj Enterprises",
+    "8492NL01AG": "Swaraj Enterprises", "5051NL01AH": "Swaraj Enterprises",
+    "2426NL01AJ": "Swaraj Enterprises", "2695NL01AJ": "Swaraj Enterprises",
+    "8888NL01AJ": "Swaraj Enterprises", "9999NL01AJ": "Swaraj Enterprises",
+    "0088NL01AK": "Swaraj Enterprises", "8431NL01AD": "Swaraj Enterprises",
+    "2275NL01AB": "Swaraj Enterprises", "8484NL01AG": "Swaraj Enterprises",
+    "0099NL01AK": "Swaraj Enterprises", "2223NL01AK": "Swaraj Enterprises",
+    "5454NL01AK": "Swaraj Enterprises", "4545NL01Ak": "Swaraj Enterprises",
+    "8088NL01AK": "Swaraj Enterprises", "3520NL01Q": "Swaraj Enterprises",
+    "6988NL01N": "Swaraj Enterprises", "7100NL01AK": "Swaraj Enterprises",
+    "7171NL01AK": "Swaraj Enterprises", "8181NL01AK": "Swaraj Enterprises",
+    "6868NL01AK": "Swaraj Enterprises",
+    "3559RJ32GD": "Road Express Technology Pvt Ltd", "6980HR38AB": "Road Express Technology Pvt Ltd",
+    "9756DD01J": "Road Express Technology Pvt Ltd", "1271HR38X": "Road Express Technology Pvt Ltd",
+    "4926KA52B": "Road Express Technology Pvt Ltd", "6230HR55AS": "Road Express Technology Pvt Ltd",
+    "1853NL01AJ": "Sun India Logistics", "6019NL01AA": "Sun India Logistics",
+    "0314NL01AK": "Sun India Logistics", "9394NL01AJ": "Sun India Logistics",
+    "7624NL01AJ": "Sun India Logistics", "2010Nl01Ak": "Sun India Logistics",
+    "0751NL01AC": "Sun India Logistics", "6768Nl01AA": "Sun India Logistics",
+    "8946NL01AJ": "Sun India Logistics", "9763NL01AD": "Sun India Logistics",
+    "0853 HR46F": "Mohan Logistics", "9741 HR46E": "Mohan Logistics",
+    "1886 HR46F": "Mohan Logistics", "8134 HR46E": "Mohan Logistics",
+    "9691 HR46E": "Mohan Logistics", "9859 HR46E": "Mohan Logistics",
+    "3044 HR46E": "Mohan Logistics", "8429 HR46E": "Mohan Logistics",
+    "2557HR46F": "Mohan Logistics", "8523HR46E": "Mohan Logistics",
+    "0731NL01AK": "Shree Ram Transport", "0723NL01AK": "Shree Ram Transport",
+    "0724NL01AK": "Shree Ram Transport", "0725NL01AK": "Shree Ram Transport",
+    "0726NL01AK": "Shree Ram Transport", "0728NL01AK": "Shree Ram Transport",
+    "0729NL01AK": "Shree Ram Transport", "0730NL01AK": "Shree Ram Transport",
+    "0949NL01AK": "Shree Ram Transport", "0950NL01AK": "Shree Ram Transport",
+    "7594NL01AK": "Shree Ram Transport",
+    "7623NL01AJ": "DAX Fleets & Logistics Pvt Ltd",
+    "2398PB11BN": "Maruti Roadways",
+    "5920NL01AB": "Krish Logistics", "1825NL01N": "Krish Logistics",
+    "0381MH46BF": "Krish Logistics", "1818NL01AK": "Krish Logistics",
+    "0926NL02AA": "Krish Logistics", "7503NL01AK": "Krish Logistics",
+    "5851MH47BY": "Thakur Transport Logistics", "5852MH47BY": "Thakur Transport Logistics",
+    "5853MH47BY": "Thakur Transport Logistics", "5854MH47BY": "Thakur Transport Logistics",
+    "5855MH47BY": "Thakur Transport Logistics",
+    "2220NL01Q": "Durga Logistics",
+    "1591MH05EL": "RRD Roadcare", "1666TS08UJ": "RRD Roadcare",
+    "6719MH04LE": "RRD Roadcare", "2543UP61CT": "RRD Roadcare",
+    "7747MH04MH": "RRD Roadcare", "2343MH04MG": "RRD Roadcare",
+    "3654HR39E": "RRD Roadcare", "7604MH04LY": "RRD Roadcare",
+    "4877MH04LY": "RRD Roadcare", "4188MH04JU": "RRD Roadcare",
+    "5098MH11M": "RRD Roadcare", "1355MH46CU": "RRD Roadcare",
+    "8731MH04JU": "RRD Roadcare", "1375MH43BX": "RRD Roadcare",
+    "4502KA51AG": "RRD Roadcare", "2867MH04LY": "RRD Roadcare",
+    "1301MH16CD": "RRD Roadcare", "3453MH04MR": "RRD Roadcare",
+    "7337NL01AF": "Shree Ganpati Trailers", "2384NL01AH": "Shree Ganpati Trailers",
+    "5071HR61E": "Shree Ganpati Trailers", "3295MH12RN": "Shree Ganpati Trailers",
+    "7876MH12RN": "Shree Ganpati Trailers", "8836NL01K": "Shree Ganpati Trailers",
+    "4123KA52B": "Shree Ganpati Trailers", "1625MH43CE": "Shree Ganpati Trailers",
+    "6059MH12NX": "Shree Ganpati Trailers", "3360NL01N": "Shree Ganpati Trailers",
+    "8781MH46BU": "Shree Ganpati Trailers", "5980HR38AB": "Shree Ganpati Trailers",
+    "0757MH12NX": "Shree Ganpati Trailers", "3674MH12MV": "Shree Ganpati Trailers",
+    "2195MH12PQ": "Shree Ganpati Trailers", "0796KA51AL": "Shree Ganpati Trailers",
+    "8294NL01L": "Shree Ganpati Trailers", "2589NL01N": "Shree Ganpati Trailers",
+    "0588NL01AJ": "Shree Ganpati Trailers", "1217NL01AK": "Shree Ganpati Trailers",
+    "9434NL01AE": "Shree Ganpati Trailers", "4121KA52B": "Shree Ganpati Trailers",
+    "6249MH40CM": "Shree Ganpati Trailers", "4197PB12Y": "Shree Ganpati Trailers",
+    "7990PB65AH": "Shree Ganpati Trailers", "9666HR39F": "Shree Ganpati Trailers",
+    "8313HP12E": "Shree Ganpati Trailers", "6104MH12VT": "Shree Ganpati Trailers",
+    "2944NL01AJ": "Arhan Logistics",
+    "4366HR55AN": "Rajnish Kumar",
+    "5406HR55AN": "PICKALL Logistics Pvt Ltd",
+}
+
+
+def _normalize_vehicle_no(v):
+    """Normalize vehicle number for matching (strip spaces, uppercase)."""
+    if not v:
+        return ""
+    return str(v).strip().replace(" ", "").upper()
+
+
+def load_vehicle_vendor_map_from_db():
+    """Load vehicle→vendor mappings from DB table."""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return {}
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS hire_vehicle_vendor_map (
+                vehicle_no TEXT PRIMARY KEY,
+                vendor_name TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+        cursor.execute("SELECT vehicle_no, vendor_name FROM hire_vehicle_vendor_map")
+        rows = cursor.fetchall()
+        conn.close()
+        return {r[0]: r[1] for r in rows}
+    except Exception:
+        return {}
+
+
+def save_vehicle_vendor_mapping(vehicle_no, vendor_name):
+    """Save a vehicle→vendor mapping to DB."""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO hire_vehicle_vendor_map (vehicle_no, vendor_name)
+            VALUES (%s, %s)
+            ON CONFLICT (vehicle_no) DO UPDATE SET vendor_name = EXCLUDED.vendor_name
+        """, (vehicle_no.strip(), vendor_name.strip()))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def remove_vehicle_vendor_mapping(vehicle_no):
+    """Remove a vehicle→vendor mapping from DB."""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return False
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM hire_vehicle_vendor_map WHERE vehicle_no = %s", (vehicle_no,))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def get_merged_vehicle_vendor_map():
+    """Return hardcoded + DB mappings merged. DB overrides hardcoded."""
+    merged = dict(VEHICLE_VENDOR_MAP_HARDCODED)
+    db_map = load_vehicle_vendor_map_from_db()
+    merged.update(db_map)
+    return merged
+
+
+def get_hv_vendor(vehicle_no, vendor_map):
+    """Map vehicle number to hire vendor name using merged map."""
+    if pd.isna(vehicle_no) or not vehicle_no:
+        return None
+    v = str(vehicle_no).strip()
+    if v in vendor_map:
+        return vendor_map[v]
+    # Try normalized match
+    v_norm = _normalize_vehicle_no(v)
+    for key, val in vendor_map.items():
+        if _normalize_vehicle_no(key) == v_norm:
+            return val
+    return None
+
+
 def normalize_party_name(party_name):
     """Map party name variations to a single standardized name for display"""
     if pd.isna(party_name) or party_name == "":
@@ -663,6 +835,49 @@ def main():
                             st.rerun()
         else:
             st.text("No exclusions")
+
+    # ── Sidebar: Hire Vehicle → Vendor Mapping ──────────────────────────
+    with st.sidebar.expander("🚛 Hire Vehicle Mapping"):
+        vendor_map_merged = get_merged_vehicle_vendor_map()
+
+        # Find unmapped vehicles from current vendor data
+        vendor_df_sidebar = st.session_state.get('vendor_df', pd.DataFrame())
+        unmapped_vehicles = []
+        if not vendor_df_sidebar.empty:
+            all_veh = vendor_df_sidebar['VehicleNo'].dropna().unique()
+            for v in all_veh:
+                if get_hv_vendor(v, vendor_map_merged) is None:
+                    unmapped_vehicles.append(str(v).strip())
+            unmapped_vehicles = sorted(set(unmapped_vehicles))
+
+        if unmapped_vehicles:
+            st.warning(f"{len(unmapped_vehicles)} unmapped vehicle(s)")
+            selected_vehicle = st.selectbox("Unmapped Vehicle", unmapped_vehicles, key='hv_map_vehicle')
+            vendor_name_input = st.text_input("Vendor Name", key='hv_map_vendor')
+            if st.button("💾 Save Mapping", key='hv_map_save'):
+                if vendor_name_input:
+                    if save_vehicle_vendor_mapping(selected_vehicle, vendor_name_input):
+                        st.success(f"Mapped: {selected_vehicle} → {vendor_name_input}")
+                        st.cache_data.clear()
+                        st.rerun()
+                else:
+                    st.warning("Enter vendor name")
+        else:
+            st.success("All vehicles mapped!")
+
+        # Show DB mappings with remove option
+        db_mappings = load_vehicle_vendor_map_from_db()
+        if db_mappings:
+            st.markdown("**DB Mappings:**")
+            for veh, ven in sorted(db_mappings.items()):
+                c1, c2 = st.columns([3, 1])
+                with c1:
+                    st.text(f"{veh} → {ven}")
+                with c2:
+                    if st.button("❌", key=f"rm_hv_{veh}"):
+                        if remove_vehicle_vendor_mapping(veh):
+                            st.cache_data.clear()
+                            st.rerun()
 
     # Filter data for selected month
     month_start = selected_month.replace(day=1)
@@ -1197,8 +1412,165 @@ def main():
             table_height = 100 + (len(final_rows) * 35) + 100
             components.html(html_table, height=table_height, scrolling=False)
 
+            # ── Vendor-Wise Summary Table ──────────────────────────────────
+            merged_vmap = get_merged_vehicle_vendor_map()
+
+            if not frag_vendor_df.empty:
+                vendor_period = frag_vendor_df[
+                    (frag_vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
+                    (frag_vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
+                ].copy()
+
+                if not vendor_period.empty:
+                    vendor_period['HVParty'] = vendor_period['VehicleNo'].apply(lambda v: get_hv_vendor(v, merged_vmap))
+                    hv_mapped = vendor_period[vendor_period['HVParty'].notna()]
+                    hv_unmapped = vendor_period[vendor_period['HVParty'].isna()]
+
+                    if not hv_mapped.empty:
+                        hv_summary = hv_mapped.groupby('HVParty').agg(
+                            Cars=('CarQty', 'sum'),
+                            Freight=('Freight', 'sum'),
+                        ).reset_index().sort_values('Cars', ascending=False)
+
+                        hv_total_cars = int(hv_summary['Cars'].sum())
+                        hv_total_freight = hv_summary['Freight'].sum()
+
+                        st.markdown("#### Vendor-Wise Summary (Hire Vehicles)")
+
+                        vendor_html = """
+                        <style>
+                            .vendor-table {
+                                width: 100%;
+                                border-collapse: collapse;
+                                font-size: 13px;
+                                background-color: #0e1117;
+                                color: #ffffff;
+                            }
+                            .vendor-table th {
+                                padding: 8px 12px;
+                                text-align: center;
+                                font-weight: bold;
+                                color: #ffffff;
+                                background-color: #1e3a5f;
+                                border: 1px solid #2d3748;
+                            }
+                            .vendor-table td {
+                                padding: 8px 10px;
+                                border: 1px solid #2d3748;
+                                color: #ffffff;
+                            }
+                            .vendor-table tr:hover {
+                                background-color: #1a202c;
+                            }
+                            .vendor-total-row {
+                                background-color: #1e40af !important;
+                                font-weight: bold;
+                            }
+                            .vendor-total-row td {
+                                color: #ffffff !important;
+                            }
+                        </style>
+                        <div style="overflow-x: auto;">
+                        <table class="vendor-table">
+                            <thead>
+                                <tr>
+                                    <th style="text-align: left; width: 5%;">#</th>
+                                    <th style="text-align: left; width: 45%;">Vendor Name</th>
+                                    <th style="width: 25%;">No. of Cars</th>
+                                    <th style="width: 25%;">Freight (₹ Lakhs)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                        """
+                        for idx, (_, vr) in enumerate(hv_summary.iterrows(), 1):
+                            vendor_html += f"""
+                                <tr>
+                                    <td style="text-align: center;">{idx}</td>
+                                    <td style="text-align: left;">{vr['HVParty']}</td>
+                                    <td style="text-align: center;">{int(vr['Cars'])}</td>
+                                    <td style="text-align: right;">₹{vr['Freight']/100000:.2f}</td>
+                                </tr>
+                            """
+                        vendor_html += f"""
+                                <tr class="vendor-total-row">
+                                    <td></td>
+                                    <td style="text-align: left;">Grand Total</td>
+                                    <td style="text-align: center;">{hv_total_cars}</td>
+                                    <td style="text-align: right;">₹{hv_total_freight/100000:.2f}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        </div>
+                        """
+                        vendor_table_height = 80 + (len(hv_summary) + 1) * 35
+                        components.html(vendor_html, height=vendor_table_height, scrolling=False)
+
+                    # ── Unmapped Vehicles Table ──────────────────────────────
+                    if not hv_unmapped.empty:
+                        unmapped_vehs = hv_unmapped[hv_unmapped['VehicleNo'].notna()]['VehicleNo'].unique()
+                        if len(unmapped_vehs) > 0:
+                            unmapped_summary = hv_unmapped[hv_unmapped['VehicleNo'].notna()].groupby('VehicleNo').agg(
+                                Cars=('CarQty', 'sum'),
+                                Freight=('Freight', 'sum'),
+                            ).reset_index().sort_values('Cars', ascending=False)
+
+                            st.markdown(f"#### Unmapped Vehicles ({len(unmapped_summary)})")
+                            st.caption("Map these in the sidebar under 'Hire Vehicle Mapping'")
+
+                            unmapped_html = """
+                            <style>
+                                .unmapped-table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                    font-size: 13px;
+                                    background-color: #0e1117;
+                                    color: #ffffff;
+                                }
+                                .unmapped-table th {
+                                    padding: 8px 12px;
+                                    text-align: center;
+                                    font-weight: bold;
+                                    color: #ffffff;
+                                    background-color: #7f1d1d;
+                                    border: 1px solid #2d3748;
+                                }
+                                .unmapped-table td {
+                                    padding: 8px 10px;
+                                    border: 1px solid #2d3748;
+                                    color: #fca5a5;
+                                }
+                            </style>
+                            <div style="overflow-x: auto;">
+                            <table class="unmapped-table">
+                                <thead>
+                                    <tr>
+                                        <th style="text-align: left; width: 5%;">#</th>
+                                        <th style="text-align: left; width: 45%;">Vehicle No</th>
+                                        <th style="width: 25%;">No. of Cars</th>
+                                        <th style="width: 25%;">Freight (₹ Lakhs)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                            """
+                            for idx, (_, ur) in enumerate(unmapped_summary.iterrows(), 1):
+                                unmapped_html += f"""
+                                    <tr>
+                                        <td style="text-align: center;">{idx}</td>
+                                        <td style="text-align: left;">{ur['VehicleNo']}</td>
+                                        <td style="text-align: center;">{int(ur['Cars'])}</td>
+                                        <td style="text-align: right;">₹{ur['Freight']/100000:.2f}</td>
+                                    </tr>
+                                """
+                            unmapped_html += """
+                                </tbody>
+                            </table>
+                            </div>
+                            """
+                            unmapped_table_height = 80 + len(unmapped_summary) * 35
+                            components.html(unmapped_html, height=unmapped_table_height, scrolling=False)
+
             # PDF Download Button
-            def generate_pdf(rows_data, grand_data, title_str, compare_label, avg_val, shortfall_val, cat_colors):
+            def generate_pdf(rows_data, grand_data, title_str, compare_label, avg_val, shortfall_val, cat_colors, vendor_summary_data=None):
                 """Generate PDF of Target vs Actual table matching dashboard style."""
                 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -1206,7 +1578,8 @@ def main():
                 n_rows = len(rows_data)
                 # Landscape width, dynamic height based on content
                 fig_width = 11.69
-                fig_height = (n_rows + 2) * rh + 1.9
+                vendor_rows = len(vendor_summary_data) + 2 if vendor_summary_data is not None and len(vendor_summary_data) > 0 else 0
+                fig_height = (n_rows + 2) * rh + 1.9 + (vendor_rows + 2) * rh + (0.6 if vendor_rows > 0 else 0)
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
@@ -1321,6 +1694,50 @@ def main():
                 ax.text(x0, y, f"Shortfall from {compare_label} >>", fontsize=8, color="#aaaaaa", va="top")
                 ax.text(col_x[5], y, f"\u20b9{shortfall_val:.2f} L", fontsize=8, color=sf_c, fontweight="bold", va="top")
 
+                # ── Vendor-Wise Summary in PDF ──────────────────────────────
+                if vendor_summary_data is not None and len(vendor_summary_data) > 0:
+                    y -= 0.5
+                    ax.text(x0, y, "Vendor-Wise Summary (Hire Vehicles)", fontsize=10, fontweight="bold", color="white", va="top")
+                    y -= 0.55
+
+                    # Vendor table columns: #, Vendor Name, Cars, Freight
+                    vcol_w = [0.5, 5.0, 2.5, 3.0]
+                    vcol_x = []
+                    vx = x0
+                    for vw in vcol_w:
+                        vcol_x.append(vx)
+                        vx += vw
+                    vtotal_w = sum(vcol_w)
+
+                    # Header
+                    vheaders = ["#", "Vendor Name", "No. of Cars", "Freight (\u20b9 Lakhs)"]
+                    for j, (vxj, vwj, vh) in enumerate(zip(vcol_x, vcol_w, vheaders)):
+                        ax.add_patch(plt.Rectangle((vxj, y), vwj, rh, facecolor="#1e3a5f", edgecolor="#6a7a8a", lw=1.0))
+                        ha = "left" if j == 1 else "center"
+                        xt = vxj + 0.08 if j == 1 else vxj + vwj/2
+                        ax.text(xt, y + rh/2, vh, fontsize=7, fontweight="bold", color="white", ha=ha, va="center")
+                    y -= rh
+
+                    # Vendor rows
+                    for idx, (_, vr) in enumerate(vendor_summary_data.iterrows(), 1):
+                        vvals = [str(idx), vr['HVParty'], str(int(vr['Cars'])), f"\u20b9{vr['Freight']/100000:.2f}"]
+                        for j, (vxj, vwj, vval) in enumerate(zip(vcol_x, vcol_w, vvals)):
+                            ax.add_patch(plt.Rectangle((vxj, y), vwj, rh, facecolor="#0e1117", edgecolor="#8899aa", lw=0.5))
+                            ha = "left" if j == 1 else ("right" if j == 3 else "center")
+                            xt = vxj + 0.08 if j == 1 else (vxj + vwj - 0.08 if j == 3 else vxj + vwj/2)
+                            ax.text(xt, y + rh/2, vval, fontsize=6.5, color="white", ha=ha, va="center")
+                        y -= rh
+
+                    # Vendor Grand Total
+                    vtotal_cars = int(vendor_summary_data['Cars'].sum())
+                    vtotal_freight = vendor_summary_data['Freight'].sum()
+                    vt_vals = ["", "Grand Total", str(vtotal_cars), f"\u20b9{vtotal_freight/100000:.2f}"]
+                    for j, (vxj, vwj, vval) in enumerate(zip(vcol_x, vcol_w, vt_vals)):
+                        ax.add_patch(plt.Rectangle((vxj, y), vwj, rh, facecolor="#1e40af", edgecolor="#3b82f6", lw=0.5))
+                        ha = "left" if j == 1 else ("right" if j == 3 else "center")
+                        xt = vxj + 0.08 if j == 1 else (vxj + vwj - 0.08 if j == 3 else vxj + vwj/2)
+                        ax.text(xt, y + rh/2, vval, fontsize=7, fontweight="bold", color="white", ha=ha, va="center")
+
                 plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
                 buf = BytesIO()
                 fig.savefig(buf, format="pdf", bbox_inches="tight", pad_inches=0.1, facecolor=fig.get_facecolor())
@@ -1328,12 +1745,32 @@ def main():
                 buf.seek(0)
                 return buf.getvalue()
 
+            # Build vendor summary for PDF (reuse merged_vmap from vendor table above)
+            pdf_vendor_summary = None
+            try:
+                if not frag_vendor_df.empty:
+                    _vp = frag_vendor_df[
+                        (frag_vendor_df['CNDate'] >= pd.Timestamp(select_month_start)) &
+                        (frag_vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
+                    ].copy()
+                    if not _vp.empty:
+                        _vp['HVParty'] = _vp['VehicleNo'].apply(lambda v: get_hv_vendor(v, merged_vmap))
+                        _vm = _vp[_vp['HVParty'].notna()]
+                        if not _vm.empty:
+                            pdf_vendor_summary = _vm.groupby('HVParty').agg(
+                                Cars=('CarQty', 'sum'),
+                                Freight=('Freight', 'sum'),
+                            ).reset_index().sort_values('Cars', ascending=False)
+            except Exception:
+                pdf_vendor_summary = None
+
             pdf_data = generate_pdf(
                 final_rows, grand_total,
                 f"Till {till_date_display} \U0001f4ca",
                 f"Till {compare_date}",
                 avg_per_day, shortfall,
                 category_colors,
+                vendor_summary_data=pdf_vendor_summary,
             )
             st.download_button(
                 label="\U0001f4e5 Download PDF",
