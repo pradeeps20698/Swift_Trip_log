@@ -1206,7 +1206,7 @@ def main():
                 n_rows = len(rows_data)
                 # Landscape width, dynamic height based on content
                 fig_width = 11.69
-                fig_height = (n_rows + 2) * rh + 1.2
+                fig_height = (n_rows + 2) * rh + 0.9
 
                 fig, ax = plt.subplots(figsize=(fig_width, fig_height))
                 ax.set_xlim(0, fig_width)
@@ -1228,11 +1228,11 @@ def main():
                 total_w = sum(col_w)
 
                 # Title
-                y = fig_height - 0.15
+                y = fig_height - 0.05
                 ax.text(x0, y, title_str, fontsize=14, fontweight="bold", color="white", va="top")
 
                 # Header rows
-                y -= 0.75
+                y -= 0.55
                 h2 = rh * 2
                 table_top = y + h2
 
