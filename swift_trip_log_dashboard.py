@@ -1135,9 +1135,22 @@ def main():
                     'Freight': 'sum'
                 }).reset_index()
                 compare_summary.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
-                summary = summary.merge(compare_summary, on='Party', how='left')
+                summary = summary.merge(compare_summary, on='Party', how='outer')
                 summary['Compare_Cars'] = summary['Compare_Cars'].fillna(0)
                 summary['Compare_Freight'] = summary['Compare_Freight'].fillna(0)
+                # Fill NaN for current period columns when party exists only in comparison period
+                summary['Trips'] = summary['Trips'].fillna(0)
+                summary['Own_Cars'] = summary['Own_Cars'].fillna(0)
+                summary['Own_Freight'] = summary['Own_Freight'].fillna(0)
+                summary['Vendor_Cars'] = summary['Vendor_Cars'].fillna(0)
+                summary['Vendor_Freight'] = summary['Vendor_Freight'].fillna(0)
+                summary['Total_Cars'] = summary['Total_Cars'].fillna(0)
+                summary['Total_Freight'] = summary['Total_Freight'].fillna(0)
+                # Add category for comparison-only parties
+                summary['category'] = summary.apply(
+                    lambda row: get_client_category(row['Party']) if pd.isna(row.get('category')) else row['category'],
+                    axis=1
+                )
             else:
                 summary['Compare_Cars'] = 0
                 summary['Compare_Freight'] = 0
