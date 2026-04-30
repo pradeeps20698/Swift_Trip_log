@@ -2076,6 +2076,80 @@ def main():
                         """
                     html_summary += "</tbody></table></div>"
                     components.html(html_summary, height=500, scrolling=True)
+
+                    # PDF Download for OEM's Wise Total Loads
+                    def generate_oem_pdf(party_df, total_trips, total_q, date_str):
+                        rh = 0.35
+                        n_rows = len(party_df)
+                        fig_width = 10
+                        fig_height = (n_rows + 2) * rh + 1.2
+
+                        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+                        ax.set_xlim(0, fig_width)
+                        ax.set_ylim(0, fig_height)
+                        ax.axis("off")
+                        fig.patch.set_facecolor("#0e1117")
+
+                        x0 = 0.15
+                        usable = fig_width - 0.3
+                        col_w = [usable * 0.08, usable * 0.57, usable * 0.17, usable * 0.18]
+                        col_x = []
+                        cx = x0
+                        for w in col_w:
+                            col_x.append(cx)
+                            cx += w
+                        total_w = sum(col_w)
+
+                        # Title
+                        y = fig_height - 0.15
+                        ax.text(x0, y, f"OEM's Wise Total Loads {date_str}", fontsize=13, fontweight="bold", color="white", va="top")
+
+                        # Header
+                        y -= 0.65
+                        headers = ["#", "Party Name", "Trips", "Qty"]
+                        for j, (cxj, cwj, hdr) in enumerate(zip(col_x, col_w, headers)):
+                            ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#1e3a5f", edgecolor="#3b82f6", lw=1.0))
+                            ha = "left" if j == 1 else "center"
+                            xt = cxj + 0.08 if j == 1 else cxj + cwj / 2
+                            ax.text(xt, y + rh / 2, hdr, fontsize=9, fontweight="bold", color="white", ha=ha, va="center")
+                        y -= rh
+
+                        # Data rows
+                        for idx, (_, row) in enumerate(party_df.iterrows(), 1):
+                            bg = "#1a1f2e" if idx % 2 == 0 else "#0e1117"
+                            vals = [str(idx), row['Party Name'], str(int(row['Trip Count'])), str(int(row['Qty']))]
+                            colors = ["white", "white", "#22c55e", "#a78bfa"]
+                            for j, (cxj, cwj, val) in enumerate(zip(col_x, col_w, vals)):
+                                ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor=bg, edgecolor="#2d3748", lw=0.5))
+                                ha = "left" if j == 1 else "center"
+                                xt = cxj + 0.08 if j == 1 else cxj + cwj / 2
+                                fw = "bold" if j >= 2 else "normal"
+                                ax.text(xt, y + rh / 2, val, fontsize=8, fontweight=fw, color=colors[j], ha=ha, va="center")
+                            y -= rh
+
+                        # Grand Total row
+                        gt_vals = ["", "Grand Total", str(total_trips), str(total_q)]
+                        gt_colors = ["white", "white", "#fbbf24", "#fbbf24"]
+                        for j, (cxj, cwj, val) in enumerate(zip(col_x, col_w, gt_vals)):
+                            ax.add_patch(plt.Rectangle((cxj, y), cwj, rh, facecolor="#1e40af", edgecolor="#3b82f6", lw=1.0))
+                            ha = "right" if j <= 1 else "center"
+                            xt = (cxj + cwj - 0.08) if j <= 1 else cxj + cwj / 2
+                            ax.text(xt, y + rh / 2, val, fontsize=9, fontweight="bold", color=gt_colors[j], ha=ha, va="center")
+
+                        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+                        buf = BytesIO()
+                        fig.savefig(buf, format="pdf", bbox_inches="tight", pad_inches=0.1, facecolor=fig.get_facecolor())
+                        plt.close(fig)
+                        buf.seek(0)
+                        return buf.getvalue()
+
+                    oem_pdf_data = generate_oem_pdf(party_summary, total_trip_count, total_qty, selected_date.strftime('%d-%b-%Y'))
+                    st.download_button(
+                        label="\U0001f4e5 Download OEM's Wise Total Loads",
+                        data=oem_pdf_data,
+                        file_name=f"OEM_Wise_Total_Loads_{selected_date.strftime('%d_%b_%Y')}.pdf",
+                        mime="application/pdf",
+                    )
                 else:
                     st.info("No data available.")
 
