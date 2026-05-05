@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 import os
 
 # Refresh intervals (in seconds)
-REFRESH_10_MIN = 600
-REFRESH_15_MIN = 900
+REFRESH_10_MIN = 1800  # 30 minutes - reduces server load on cloud deployment
+REFRESH_15_MIN = 1800  # 30 minutes - reduces server load on cloud deployment
 REFRESH_20_MIN = 1200
 
 # Page configuration
@@ -212,6 +212,7 @@ def load_vendor_data():
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=600)
 def load_cn_data():
     """Load ALL cn_data for use in fragments (cn_aging, unbilled_cn, etc.)"""
     try:
@@ -376,6 +377,7 @@ def get_vendor_client_mapping(billing_party, origin=None):
     return vendor_mappings.get(billing_party, 'Market Load')
 
 
+@st.cache_data(ttl=600)
 def load_targets():
     """Load target SOB data from database"""
     try:
@@ -412,6 +414,7 @@ def save_target(party_name, target_value):
         return False
 
 
+@st.cache_data(ttl=600)
 def load_excluded_trips():
     """Load excluded trip numbers from database"""
     try:
