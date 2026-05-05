@@ -641,6 +641,8 @@ def get_client_category(party_name):
         return "SAI Auto"
     elif "KWICK" in party_upper:
         return "Kwick"
+    elif "ESCORTS" in party_upper or "KUBOTA" in party_upper:
+        return "Escorts"
     else:
         return "Other"
 
@@ -1156,7 +1158,7 @@ def main():
                 summary['Compare_Freight'] = 0
 
             # Build final table with category totals
-            category_order = ['Honda', 'M & M', 'Toyota', 'Skoda', 'Glovis', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Market Load', 'Other']
+            category_order = ['Honda', 'M & M', 'Toyota', 'Glovis', 'Skoda', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Escorts', 'Market Load', 'Other']
             category_colors = {
                 'Honda': '#ff6b35',
                 'M & M': '#2e8b57',
@@ -1171,6 +1173,7 @@ def main():
             }
 
             final_rows = []
+            single_party_rows = []  # Single-party categories shown after grouped ones
             grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0, 'Target_SQR': 0}
 
             for category in category_order:
@@ -1179,12 +1182,49 @@ def main():
                     # Calculate category target sum from individual rows
                     category_target_sum = 0
 
-                    # Add individual rows
-                    for _, row in cat_df.iterrows():
+                    if len(cat_df) > 1:
+                        # Multi-party category: add individual rows + total row
+                        for _, row in cat_df.iterrows():
+                            target_sqr = targets.get(row['Party'], 0)
+                            if target_sqr:
+                                category_target_sum += target_sqr
+                            final_rows.append({
+                                'Client - Wise': row['Party'],
+                                'Target SQR': target_sqr if target_sqr else '',
+                                'Own': int(row['Own_Cars']),
+                                'Vendor': int(row['Vendor_Cars']),
+                                'Total': int(row['Total_Cars']),
+                                'Own_F': row['Own_Freight'],
+                                'Vendor_F': row['Vendor_Freight'],
+                                'Total_F': row['Total_Freight'],
+                                'Cars_Comp': int(row['Compare_Cars']),
+                                'Freight_Comp': row['Compare_Freight'],
+                                'is_total': False,
+                                'category': category
+                            })
+
+                        # Add category total row
+                        final_rows.append({
+                            'Client - Wise': f"{category} - Total",
+                            'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
+                            'Own': int(cat_df['Own_Cars'].sum()),
+                            'Vendor': int(cat_df['Vendor_Cars'].sum()),
+                            'Total': int(cat_df['Total_Cars'].sum()),
+                            'Own_F': cat_df['Own_Freight'].sum(),
+                            'Vendor_F': cat_df['Vendor_Freight'].sum(),
+                            'Total_F': cat_df['Total_Freight'].sum(),
+                            'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
+                            'Freight_Comp': cat_df['Compare_Freight'].sum(),
+                            'is_total': True,
+                            'category': category
+                        })
+                    else:
+                        # Single-party category: collect to show after all grouped categories
+                        row = cat_df.iloc[0]
                         target_sqr = targets.get(row['Party'], 0)
                         if target_sqr:
                             category_target_sum += target_sqr
-                        final_rows.append({
+                        single_party_rows.append({
                             'Client - Wise': row['Party'],
                             'Target SQR': target_sqr if target_sqr else '',
                             'Own': int(row['Own_Cars']),
@@ -1202,23 +1242,6 @@ def main():
                     # Add to grand total target (for all categories)
                     grand_total['Target_SQR'] += category_target_sum
 
-                    # Add category total (only show when more than 1 party in category)
-                    if len(cat_df) > 1:
-                        final_rows.append({
-                            'Client - Wise': f"{category} - Total",
-                            'Target SQR': int(category_target_sum) if category_target_sum > 0 else '',
-                            'Own': int(cat_df['Own_Cars'].sum()),
-                            'Vendor': int(cat_df['Vendor_Cars'].sum()),
-                            'Total': int(cat_df['Total_Cars'].sum()),
-                            'Own_F': cat_df['Own_Freight'].sum(),
-                            'Vendor_F': cat_df['Vendor_Freight'].sum(),
-                            'Total_F': cat_df['Total_Freight'].sum(),
-                            'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
-                            'Freight_Comp': cat_df['Compare_Freight'].sum(),
-                            'is_total': True,
-                            'category': category
-                        })
-
                     # Accumulate grand total
                     grand_total['Own'] += int(cat_df['Own_Cars'].sum())
                     grand_total['Vendor'] += int(cat_df['Vendor_Cars'].sum())
@@ -1228,6 +1251,9 @@ def main():
                     grand_total['Total_F'] += cat_df['Total_Freight'].sum()
                     grand_total['Cars_Comp'] += int(cat_df['Compare_Cars'].sum())
                     grand_total['Freight_Comp'] += cat_df['Compare_Freight'].sum()
+
+            # Add single-party categories after all grouped categories
+            final_rows.extend(single_party_rows)
 
             # Add Grand Total row
             final_rows.append({
