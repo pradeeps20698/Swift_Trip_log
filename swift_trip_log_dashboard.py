@@ -466,6 +466,39 @@ def remove_excluded_trip(trip_no):
         return False
 
 
+@st.cache_data(ttl=600)
+def load_cn_cross_check_data():
+    """Load CN cross-check data for pending CN tab - cached to avoid repeated DB queries"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return None, None
+        cn_query = """
+            SELECT DISTINCT cn_date, vehicle_no
+            FROM cn_data
+            WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
+              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+              AND (is_active = true OR is_active = 'Yes')
+        """
+        cn_records = pd.read_sql_query(cn_query, conn)
+
+        own_vehicle_query = """
+            SELECT DISTINCT route, vehicle_no
+            FROM cn_data
+            WHERE (tl_no IS NULL OR tl_no = '')
+              AND vehicle_type = 'Own Vehicle'
+              AND route IS NOT NULL AND route != ''
+              AND vehicle_no IS NOT NULL AND vehicle_no != ''
+              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+              AND (is_active = true OR is_active = 'Yes')
+        """
+        own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
+        conn.close()
+        return cn_records, own_vehicle_records
+    except Exception:
+        return None, None
+
+
 # ── Hire Vehicle → Vendor mapping (DB-backed + hardcoded fallback) ──────────
 VEHICLE_VENDOR_MAP_HARDCODED = {
     "7401RJ14GT": "Ranjeet Singh Logistics", "7391RJ14GT": "Ranjeet Singh Logistics",
@@ -4369,31 +4402,8 @@ def main():
             # Cross-check with cn_data to exclude trips that have CN records
             if len(pending_cn_df) > 0:
                 try:
-                    conn = get_db_connection()
-                    if conn is not None:
-                        # Load cn_data for matching (Method 1: cn_date + vehicle_no)
-                        cn_query = """
-                            SELECT DISTINCT cn_date, vehicle_no
-                            FROM cn_data
-                            WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
-                              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
-                              AND (is_active = true OR is_active = 'Yes')
-                        """
-                        cn_records = pd.read_sql_query(cn_query, conn)
-
-                        # Load cn_data for Own Vehicle matching (Method 2: route + vehicle_no where tl_no is blank)
-                        own_vehicle_query = """
-                            SELECT DISTINCT route, vehicle_no
-                            FROM cn_data
-                            WHERE (tl_no IS NULL OR tl_no = '')
-                              AND vehicle_type = 'Own Vehicle'
-                              AND route IS NOT NULL AND route != ''
-                              AND vehicle_no IS NOT NULL AND vehicle_no != ''
-                              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
-                              AND (is_active = true OR is_active = 'Yes')
-                        """
-                        own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
-                        conn.close()
+                    cn_records, own_vehicle_records = load_cn_cross_check_data()
+                    if cn_records is not None:
 
                         # Method 1: Match by cn_date + vehicle_no
                         if not cn_records.empty:
