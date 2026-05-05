@@ -3059,8 +3059,10 @@ def main():
                                     'Loaded_Party': current_trip['NewPartyName'] or current_trip['Party'],
                                     'Loaded_Cars': current_trip['CarQty'],
                                     'Loaded_Freight': current_trip['Freight'],
+                                    'Loaded_TLHSNo': current_trip.get('TLHSNo', '') or '',
                                     'Empty_Date': next_trip['LoadingDate'],
                                     'Empty_Route': next_trip['Route'],
+                                    'Empty_TLHSNo': next_trip.get('TLHSNo', '') or '',
                                     'Days_Gap': (next_trip['LoadingDate'].date() - current_trip['LoadingDate'].date()).days if pd.notna(next_trip['LoadingDate']) and pd.notna(current_trip['LoadingDate']) else None,
                                     'Loaded_Distance': loaded_distance,
                                     'Empty_Distance': empty_distance,
@@ -3109,6 +3111,30 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
 
+                # Summary table - Status vs Count
+                total_round = green_count + amber_count + red_count + not_profit_count
+                summary_html = f"""
+                <style>
+                    .summary-tbl {{ width: 280px; border-collapse: collapse; font-family: sans-serif; font-size: 13px; margin: 10px 0 20px 0; }}
+                    .summary-tbl th {{ background: #1e3a5f; color: #fff; padding: 8px 12px; text-align: left; border: 1px solid #3b82f6; }}
+                    .summary-tbl td {{ padding: 7px 12px; border: 1px solid #2d3748; color: #fff; }}
+                    .summary-tbl tr:nth-child(odd) td {{ background: #0e1117; }}
+                    .summary-tbl tr:nth-child(even) td {{ background: #1a1f2e; }}
+                    .summary-tbl .total td {{ background: #1e3a5f; font-weight: bold; }}
+                </style>
+                <table class="summary-tbl">
+                    <thead><tr><th>Status</th><th style="text-align:right;">Count</th></tr></thead>
+                    <tbody>
+                        <tr><td>Green</td><td style="text-align:right;">{green_count}</td></tr>
+                        <tr><td>Amber</td><td style="text-align:right;">{amber_count}</td></tr>
+                        <tr><td>Red</td><td style="text-align:right;">{red_count}</td></tr>
+                        <tr><td>Not profitable</td><td style="text-align:right;">{not_profit_count}</td></tr>
+                        <tr class="total"><td><b>Total Round Trips</b></td><td style="text-align:right;"><b>{total_round}</b></td></tr>
+                    </tbody>
+                </table>
+                """
+                st.markdown(summary_html, unsafe_allow_html=True)
+
                 st.markdown("---")
                 st.markdown("#### Round Trip Profitability Details")
 
@@ -3133,16 +3159,19 @@ def main():
                 <div class="table-container">
                 <table class="profit-table">
                 <colgroup>
-                    <col style="width: 9%;">
-                    <col style="width: 8%;">
-                    <col style="width: 16%;">
-                    <col style="width: 18%;">
-                    <col style="width: 5%;">
-                    <col style="width: 8%;">
                     <col style="width: 7%;">
-                    <col style="width: 8%;">
-                    <col style="width: 8%;">
+                    <col style="width: 6%;">
+                    <col style="width: 12%;">
+                    <col style="width: 6%;">
+                    <col style="width: 12%;">
+                    <col style="width: 6%;">
+                    <col style="width: 12%;">
+                    <col style="width: 4%;">
+                    <col style="width: 6%;">
                     <col style="width: 5%;">
+                    <col style="width: 6%;">
+                    <col style="width: 6%;">
+                    <col style="width: 4%;">
                     <col style="width: 8%;">
                 </colgroup>
                 <thead>
@@ -3150,6 +3179,9 @@ def main():
                         <th>Vehicle</th>
                         <th>Date</th>
                         <th>Loaded Route</th>
+                        <th>Loaded TLS</th>
+                        <th>Empty Route</th>
+                        <th>Empty TLS</th>
                         <th>Party</th>
                         <th>Cars</th>
                         <th>Revenue</th>
@@ -3175,10 +3207,10 @@ def main():
                         color_class = 'not-profit'
 
                     loaded_date = pd.to_datetime(row['Loaded_Date']).strftime('%d-%b-%Y') if pd.notna(row['Loaded_Date']) else ''
-                    revenue_fmt = f"₹{row['Revenue']/100000:.2f}L" if row['Revenue'] > 0 else "₹0"
+                    revenue_fmt = f"₹{row['Revenue']/1000:.1f}K" if row['Revenue'] > 0 else "₹0"
                     total_exp = row['Loaded_Exp'] + row['Empty_Exp']
-                    total_exp_fmt = f"₹{total_exp/100000:.2f}L"
-                    contrib_fmt = f"₹{row['Contribution']/100000:.2f}L"
+                    total_exp_fmt = f"₹{total_exp/1000:.1f}K"
+                    contrib_fmt = f"₹{row['Contribution']/1000:.1f}K"
                     per_day_fmt = f"₹{per_day:,.0f}"
 
                     html_table += f"""
@@ -3186,6 +3218,9 @@ def main():
                         <td>{row['VehicleNo']}</td>
                         <td>{loaded_date}</td>
                         <td class="left-align" title="{row['Loaded_Route']}">{row['Loaded_Route']}</td>
+                        <td>{row.get('Loaded_TLHSNo', '') or ''}</td>
+                        <td class="left-align" title="{row.get('Empty_Route', '') or ''}">{row.get('Empty_Route', '') or ''}</td>
+                        <td>{row.get('Empty_TLHSNo', '') or ''}</td>
                         <td class="left-align" title="{row['Loaded_Party'] or ''}">{row['Loaded_Party'] or ''}</td>
                         <td>{int(row['Loaded_Cars'])}</td>
                         <td>{revenue_fmt}</td>
@@ -3200,6 +3235,111 @@ def main():
                 html_table += "</tbody></table></div>"
 
                 components.html(html_table, height=min(len(round_df) * 40 + 100, 500), scrolling=True)
+
+                # Excel Download for Round Trip Profitability Details
+                from openpyxl import Workbook
+                from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+
+                rt_output = BytesIO()
+                rt_wb = Workbook()
+                rt_ws = rt_wb.active
+                rt_ws.title = "Round Trip Profitability"
+
+                rt_green_fill = PatternFill(start_color="166534", end_color="166534", fill_type="solid")
+                rt_amber_fill = PatternFill(start_color="B45309", end_color="B45309", fill_type="solid")
+                rt_red_fill = PatternFill(start_color="991B1B", end_color="991B1B", fill_type="solid")
+                rt_gray_fill = PatternFill(start_color="374151", end_color="374151", fill_type="solid")
+                rt_header_fill = PatternFill(start_color="1E3A5F", end_color="1E3A5F", fill_type="solid")
+                rt_white_font = Font(color="FFFFFF", bold=True)
+                rt_center = Alignment(horizontal="center", vertical="center")
+                rt_left = Alignment(horizontal="left", vertical="center")
+                rt_border = Border(
+                    left=Side(style='thin'), right=Side(style='thin'),
+                    top=Side(style='thin'), bottom=Side(style='thin')
+                )
+
+                rt_headers = ["Vehicle", "Date", "Loaded Route", "Loaded TLS", "Empty Route", "Empty TLS", "Party", "Cars", "Revenue", "Dist", "Expense", "Contrib.", "Days", "Per Day"]
+                for ci, h in enumerate(rt_headers, 1):
+                    cell = rt_ws.cell(row=1, column=ci, value=h)
+                    cell.fill = rt_header_fill
+                    cell.font = rt_white_font
+                    cell.alignment = rt_center
+                    cell.border = rt_border
+
+                for ri, (_, row) in enumerate(round_df.iterrows(), 2):
+                    per_day = row['Per_Day_Contribution']
+                    loaded_date = pd.to_datetime(row['Loaded_Date']).strftime('%d-%b-%Y') if pd.notna(row['Loaded_Date']) else ''
+                    total_exp = row['Loaded_Exp'] + row['Empty_Exp']
+                    vals = [
+                        row['VehicleNo'], loaded_date, row['Loaded_Route'],
+                        row.get('Loaded_TLHSNo', '') or '',
+                        row.get('Empty_Route', '') or '',
+                        row.get('Empty_TLHSNo', '') or '',
+                        row['Loaded_Party'] or '', int(row['Loaded_Cars']),
+                        f"₹{row['Revenue']/1000:.1f}K", f"{int(row['Total_Distance'])} km",
+                        f"₹{total_exp/1000:.1f}K", f"₹{row['Contribution']/1000:.1f}K",
+                        int(row['Calc_Days']), f"₹{per_day:,.0f}"
+                    ]
+                    if per_day >= 7000:
+                        pd_fill = rt_green_fill
+                    elif per_day >= 5000:
+                        pd_fill = rt_amber_fill
+                    elif per_day >= 3000:
+                        pd_fill = rt_red_fill
+                    else:
+                        pd_fill = rt_gray_fill
+
+                    for ci, v in enumerate(vals, 1):
+                        cell = rt_ws.cell(row=ri, column=ci, value=v)
+                        cell.border = rt_border
+                        cell.alignment = rt_left if ci in (3, 5, 7) else rt_center
+                        if ci == 14:
+                            cell.fill = pd_fill
+                            cell.font = Font(color="FFFFFF", bold=True)
+
+                rt_col_widths = [14, 12, 28, 12, 28, 12, 32, 6, 12, 10, 12, 12, 6, 12]
+                for ci, w in enumerate(rt_col_widths, 1):
+                    rt_ws.column_dimensions[rt_ws.cell(row=1, column=ci).column_letter].width = w
+
+                # Add summary table below data
+                summary_start = len(round_df) + 4  # 2 blank rows after data
+                total_round = green_count + amber_count + red_count + not_profit_count
+                summary_rows = [
+                    ("Status", "Count"),
+                    ("Green", green_count),
+                    ("Amber", amber_count),
+                    ("Red", red_count),
+                    ("Not profitable", not_profit_count),
+                    ("Total Round Trips", total_round),
+                ]
+                for idx, (status, count) in enumerate(summary_rows):
+                    s_cell = rt_ws.cell(row=summary_start + idx, column=1, value=status)
+                    c_cell = rt_ws.cell(row=summary_start + idx, column=2, value=count)
+                    s_cell.border = rt_border
+                    c_cell.border = rt_border
+                    c_cell.alignment = rt_center
+                    if idx == 0:  # header
+                        s_cell.fill = rt_header_fill
+                        s_cell.font = rt_white_font
+                        c_cell.fill = rt_header_fill
+                        c_cell.font = rt_white_font
+                    elif idx == len(summary_rows) - 1:  # total row
+                        s_cell.font = Font(bold=True)
+                        c_cell.font = Font(bold=True)
+                        s_cell.fill = rt_header_fill
+                        s_cell.font = rt_white_font
+                        c_cell.fill = rt_header_fill
+                        c_cell.font = rt_white_font
+
+                rt_wb.save(rt_output)
+                rt_output.seek(0)
+
+                st.download_button(
+                    label="📥 Download Round Trip Profitability",
+                    data=rt_output.getvalue(),
+                    file_name="Round_Trip_Profitability.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
             else:
                 st.info("No round trips found matching the criteria (Loaded from Pune/Nashik → Empty return to Pune/Nashik)")
 
