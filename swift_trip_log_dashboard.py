@@ -883,11 +883,6 @@ def main():
                 del st.session_state[key]
         st.rerun()
 
-    # Dashboard View navigation
-    st.sidebar.markdown("---")
-    tab_names = ["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs"]
-    selected_tab = st.sidebar.radio("Dashboard View", tab_names, index=0, key="active_tab")
-
     # Target SOB Update Section
     st.sidebar.markdown("---")
     st.sidebar.subheader("Update Target SOB")
@@ -1129,9 +1124,9 @@ def main():
     # Call the month summary fragment
     month_summary_fragment()
 
-    # Render only the selected tab (performance optimization)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs"])
 
-    if selected_tab == "📊 Target vs Actual":
+    with tab1:
         # Target vs Actual - Client-Wise Summary
         st.markdown("### Target vs Actual - Client-Wise Summary")
 
@@ -1927,7 +1922,7 @@ def main():
 
         target_vs_actual_fragment()
 
-    elif selected_tab == "📅 Daily Loading Details":
+    with tab2:
         st.markdown("### Daily Loading Details")
 
         @st.fragment(run_every=REFRESH_10_MIN)
@@ -2351,7 +2346,7 @@ def main():
         # Call the fragment
         daily_loading_fragment()
 
-    elif selected_tab == "🚚 Local/Pilot Loads":
+    with tab3:
         st.markdown("### Local/Pilot Loads")
 
         # Use fragment to prevent tab switching on filter change
@@ -2648,7 +2643,7 @@ def main():
         # Call the fragment
         local_pilot_fragment()
 
-    elif selected_tab == "🗺️ Zone View":
+    with tab4:
         st.markdown("### Zone View")
 
         # Zone mapping function
@@ -3025,7 +3020,7 @@ def main():
 
         zone_view_fragment()
 
-    elif selected_tab == "🔄 NSK/Ckn Round Trips":
+    with tab5:
         st.markdown("### NSK/Ckn Round Trips - Round Trip Analysis")
         st.caption("*NSK/Ckn-north dedicated vehicles - Loaded from Pune/Nashik with return empty trips*")
 
@@ -3463,7 +3458,7 @@ def main():
 
         cinder_trips_fragment()
 
-    elif selected_tab == "💰 Trip Profitability":
+    with tab6:
         st.markdown("### Trip Profitability - All Loaded Trips")
         st.caption("*Profitability analysis for all loaded trips*")
 
@@ -4369,7 +4364,7 @@ def main():
 
         trip_profitability_fragment()
 
-    elif selected_tab == "📋 Pending CN - Triplogs":
+    with tab7:
         st.markdown("### Pending CN - Triplogs")
 
         @st.fragment(run_every=REFRESH_10_MIN)
