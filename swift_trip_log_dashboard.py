@@ -103,7 +103,7 @@ def get_db_connection():
         st.error(f"Database connection error: {e}")
         return None
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes for fresher data
+@st.cache_data(ttl=600)  # Cache for 10 minutes to reduce DB reloads
 def load_triplog_data():
     """Load trip log data directly from PostgreSQL database"""
     try:
@@ -171,7 +171,7 @@ def load_triplog_data():
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)  # Cache for 5 minutes
+@st.cache_data(ttl=600)  # Cache for 10 minutes to reduce DB reloads
 def load_vendor_data():
     """Load vendor data from cn_data table (where tl_no is NULL = vendor trips)"""
     try:
@@ -262,6 +262,68 @@ def load_vehicles_by_type(vehicle_type):
     except Exception as e:
         st.error(f"Error loading vehicles by type: {e}")
         return []
+
+
+@st.cache_data(ttl=3600)
+def load_all_vehicles_by_type():
+    """Load all vehicle types in a single query and return dict keyed by type"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return {}
+        query = "SELECT vehicle_type, vehicle_no FROM swift_vehicles"
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        if df.empty:
+            return {}
+        return df.groupby('vehicle_type')['vehicle_no'].apply(list).to_dict()
+    except Exception as e:
+        st.error(f"Error loading all vehicles by type: {e}")
+        return {}
+
+
+@st.cache_data(ttl=3600)
+def get_historical_empty_routes():
+    """Get historical trip patterns with distances from all past trips"""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return {}
+        query = """
+            SELECT
+                UPPER(TRIM(SPLIT_PART(route, ' - ', 1))) as origin,
+                UPPER(TRIM(SPLIT_PART(route, ' - ', 2))) as destination,
+                COUNT(*) as trip_count,
+                AVG(distance) as avg_distance,
+                trip_status
+            FROM swift_trip_log
+            WHERE route IS NOT NULL
+                AND route LIKE '%-%'
+                AND distance > 0
+                AND is_active = true
+            GROUP BY UPPER(TRIM(SPLIT_PART(route, ' - ', 1))), UPPER(TRIM(SPLIT_PART(route, ' - ', 2))), trip_status
+            HAVING COUNT(*) >= 1
+        """
+        hist_df = pd.read_sql_query(query, conn)
+        conn.close()
+
+        routes = {}
+        for _, row in hist_df.iterrows():
+            origin = row['origin']
+            if origin not in routes:
+                routes[origin] = []
+            existing = next((r for r in routes[origin] if r['destination'] == row['destination']), None)
+            if existing:
+                existing['count'] += row['trip_count']
+            else:
+                routes[origin].append({
+                    'destination': row['destination'],
+                    'avg_distance': row['avg_distance'],
+                    'count': row['trip_count']
+                })
+        return routes
+    except:
+        return {}
 
 
 def get_vendor_client_mapping(billing_party, origin=None):
@@ -679,8 +741,20 @@ def load_and_process_data():
     # Add client category based on DisplayParty
     df['category'] = df['DisplayParty'].apply(get_client_category)
 
+    # Pre-compute Origin and Destination from Route column
+    df['Origin'] = df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
+    df['Destination'] = df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
+
     # Pre-compute LoadingDateOnly for faster filtering
     df['LoadingDateOnly'] = df['LoadingDate'].dt.date
+
+    # Pre-compute vendor mappings
+    if not vendor_df.empty:
+        vendor_df['MappedParty'] = vendor_df.apply(
+            lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
+        )
+        vendor_df['OriginCity'] = vendor_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
+        vendor_df['DestCity'] = vendor_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
 
     return df, vendor_df
 
@@ -922,10 +996,6 @@ def main():
                 (frag_vendor_df['CNDate'] < pd.Timestamp(month_end.date()) + pd.Timedelta(days=1))
             ].copy()
             if not vendor_month_df.empty:
-                # Apply vendor mapping to filter only mapped vendors
-                vendor_month_df['MappedParty'] = vendor_month_df.apply(
-                    lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                )
                 vendor_mapped = vendor_month_df[vendor_month_df['MappedParty'].notna()]
                 vendor_cars = int(vendor_mapped['CarQty'].sum())
                 vendor_freight = vendor_mapped['Freight'].sum()
@@ -1093,11 +1163,6 @@ def main():
                 ].copy()
 
                 if not vendor_current.empty:
-                    # Map vendor billing_party to client display name (with origin for Mahindra)
-                    vendor_current['MappedParty'] = vendor_current.apply(
-                        lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                    )
-
                     # Filter only mapped vendors and group
                     vendor_mapped = vendor_current[vendor_current['MappedParty'].notna()]
                     if not vendor_mapped.empty:
@@ -1862,9 +1927,6 @@ def main():
                     (frag_vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
                 ].copy()
                 if not vendor_daily_data.empty:
-                    vendor_daily_data['MappedParty'] = vendor_daily_data.apply(
-                        lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                    )
                     vendor_daily_data = vendor_daily_data[vendor_daily_data['MappedParty'].notna()]
                     vendor_cars_lifted = int(vendor_daily_data['CarQty'].sum())
                     # Trips = unique vehicle numbers
@@ -1918,11 +1980,7 @@ def main():
 
                 if len(daily_data) > 0:
                     # Prepare trip details table
-                    trip_details = daily_data[['LoadingDate', 'VehicleNo', 'DisplayParty', 'Route', 'CarQty']].copy()
-
-                    # Split Route into Origin and Destination
-                    trip_details['Origin'] = trip_details['Route'].apply(lambda x: x.split(' - ')[0] if ' - ' in str(x) else str(x))
-                    trip_details['Destination'] = trip_details['Route'].apply(lambda x: x.split(' - ')[1] if ' - ' in str(x) and len(x.split(' - ')) > 1 else '')
+                    trip_details = daily_data[['LoadingDate', 'VehicleNo', 'DisplayParty', 'Route', 'Origin', 'Destination', 'CarQty']].copy()
 
                     # Build HTML table
                     html_trips = """
@@ -1988,10 +2046,6 @@ def main():
                         (frag_vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
                     ].copy()
                     if not vendor_daily.empty:
-                        # Apply vendor mapping
-                        vendor_daily['MappedParty'] = vendor_daily.apply(
-                            lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                        )
                         vendor_daily = vendor_daily[vendor_daily['MappedParty'].notna()]
 
                     if not vendor_daily.empty:
@@ -2195,9 +2249,6 @@ def main():
                         (frag_vendor_df['CNDate'] < pd.Timestamp(selected_date) + pd.Timedelta(days=1))
                     ].copy()
                     if not vendor_daily_summary.empty:
-                        vendor_daily_summary['MappedParty'] = vendor_daily_summary.apply(
-                            lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                        )
                         vendor_daily_summary = vendor_daily_summary[vendor_daily_summary['MappedParty'].notna()]
 
                     if not vendor_daily_summary.empty:
@@ -2274,13 +2325,14 @@ def main():
             refresh_session_data()
 
             # Pre-load ALL vehicle types once at the start for better performance
-            kia_vehicles = load_vehicles_by_type('TR_KIA_LCL')
-            kia_ap_vehicles = load_vehicles_by_type('TR_KIA_AP PASSING')
-            haridwar_vehicles = load_vehicles_by_type('TR_HRD_LCL')
-            gujarat_vehicles = load_vehicles_by_type('TR_Gujarat_LCL')
-            nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
-            patna_vehicles = load_vehicles_by_type('TR_Patna_LCL_4018 BS6')
-            road_pilot_vehicles = load_vehicles_by_type('Road Pilot')
+            all_vehicles = load_all_vehicles_by_type()
+            kia_vehicles = all_vehicles.get('TR_KIA_LCL', [])
+            kia_ap_vehicles = all_vehicles.get('TR_KIA_AP PASSING', [])
+            haridwar_vehicles = all_vehicles.get('TR_HRD_LCL', [])
+            gujarat_vehicles = all_vehicles.get('TR_Gujarat_LCL', [])
+            nsk_ckn_vehicles = all_vehicles.get('NSK/Ckn-north dedicated', [])
+            patna_vehicles = all_vehicles.get('TR_Patna_LCL_4018 BS6', [])
+            road_pilot_vehicles = all_vehicles.get('Road Pilot', [])
 
             # Create filter functions for each category (using pre-loaded vehicle lists)
             def get_toyota_local(data):
@@ -2687,9 +2739,6 @@ def main():
             ].copy()
 
             # Extract Origin and Destination from Route
-            loaded_df['Origin'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
-            loaded_df['Destination'] = loaded_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
-
             # Map to zones
             loaded_df['Origin_Zone'] = loaded_df['Origin'].apply(get_zone)
             loaded_df['Dest_Zone'] = loaded_df['Destination'].apply(get_zone)
@@ -2833,16 +2882,9 @@ def main():
                 ].copy()
 
                 if not vendor_zone_df.empty:
-                    # Apply vendor mapping
-                    vendor_zone_df['MappedParty'] = vendor_zone_df.apply(
-                        lambda row: get_vendor_client_mapping(row['BillingParty'], row.get('Origin')), axis=1
-                    )
                     vendor_zone_df = vendor_zone_df[vendor_zone_df['MappedParty'].notna()]
 
                     if not vendor_zone_df.empty:
-                        # Extract Origin and Destination from Route
-                        vendor_zone_df['OriginCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[0].strip() if ' - ' in str(x) else str(x).strip())
-                        vendor_zone_df['DestCity'] = vendor_zone_df['Route'].apply(lambda x: str(x).split(' - ')[1].strip() if ' - ' in str(x) and len(str(x).split(' - ')) > 1 else '')
 
                         # Map to zones
                         vendor_zone_df['Origin_Zone'] = vendor_zone_df['OriginCity'].apply(get_zone)
@@ -2997,7 +3039,7 @@ def main():
                 return 45.6, 40  # Default: loaded=45.6, empty=40
 
             # Load NSK/Ckn-north dedicated vehicles (exactly 20 vehicles)
-            nsk_ckn_vehicles = load_vehicles_by_type('NSK/Ckn-north dedicated')
+            nsk_ckn_vehicles = load_all_vehicles_by_type().get('NSK/Ckn-north dedicated', [])
 
             if not nsk_ckn_vehicles:
                 st.info("No NSK/Ckn-north dedicated vehicles found.")
@@ -3441,56 +3483,6 @@ def main():
             if len(frag_df) == 0:
                 st.info("No trip data available for selected month.")
                 return
-
-            # Load historical trip data for distance lookup (both empty and loaded trips)
-            @st.cache_data(ttl=3600)
-            def get_historical_empty_routes():
-                """Get historical trip patterns with distances from all past trips"""
-                try:
-                    conn = get_db_connection()
-                    if conn is None:
-                        return {}
-                    # Get distances from ALL trips (empty and loaded) for better coverage
-                    query = """
-                        SELECT
-                            UPPER(TRIM(SPLIT_PART(route, ' - ', 1))) as origin,
-                            UPPER(TRIM(SPLIT_PART(route, ' - ', 2))) as destination,
-                            COUNT(*) as trip_count,
-                            AVG(distance) as avg_distance,
-                            trip_status
-                        FROM swift_trip_log
-                        WHERE route IS NOT NULL
-                            AND route LIKE '%-%'
-                            AND distance > 0
-                            AND is_active = true
-                        GROUP BY UPPER(TRIM(SPLIT_PART(route, ' - ', 1))), UPPER(TRIM(SPLIT_PART(route, ' - ', 2))), trip_status
-                        HAVING COUNT(*) >= 1
-                    """
-                    hist_df = pd.read_sql_query(query, conn)
-                    conn.close()
-
-                    # Create lookup: origin -> list of (destination, avg_distance, count)
-                    # Prioritize empty trips for suggestions, but use any trip for distance
-                    routes = {}
-                    for _, row in hist_df.iterrows():
-                        origin = row['origin']
-                        if origin not in routes:
-                            routes[origin] = []
-                        # Check if this destination already exists
-                        existing = next((r for r in routes[origin] if r['destination'] == row['destination']), None)
-                        if existing:
-                            # Update with more data
-                            existing['count'] += row['trip_count']
-                            # Keep the distance (already have it)
-                        else:
-                            routes[origin].append({
-                                'destination': row['destination'],
-                                'avg_distance': row['avg_distance'],
-                                'count': row['trip_count']
-                        })
-                    return routes
-                except:
-                    return {}
 
             historical_routes = get_historical_empty_routes()
 
