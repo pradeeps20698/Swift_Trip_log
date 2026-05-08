@@ -3726,7 +3726,7 @@ def main():
                 round_df = pd.DataFrame(all_trips)
 
                 # Filters at the top - apply to all summaries and tables
-                filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 4])
+                filter_col1, filter_col2, filter_col3 = st.columns([2, 2, 2])
 
                 with filter_col1:
                     # Date filter based on loading date
@@ -3738,6 +3738,11 @@ def main():
                     freight_options = ['All', 'Freight = 0', 'Freight > 0']
                     selected_freight = st.selectbox("💰 Freight Filter", freight_options, key="trip_freight_filter_top")
 
+                with filter_col3:
+                    # Profitability filter
+                    profit_filter_options = ['All', 'Highest Profitable', 'Medium Profitable', 'Less Profitable']
+                    selected_profit_filter = st.selectbox("📊 Profitability Filter", profit_filter_options, key="trip_profit_filter_top")
+
                 # Apply filters to round_df
                 if selected_date != 'All Dates':
                     round_df = round_df[pd.to_datetime(round_df['Loaded_Date']).dt.strftime('%d-%b-%Y') == selected_date]
@@ -3746,6 +3751,18 @@ def main():
                     round_df = round_df[round_df['Revenue'] == 0]
                 elif selected_freight == 'Freight > 0':
                     round_df = round_df[round_df['Revenue'] > 0]
+
+                # Apply profitability filter
+                if selected_profit_filter != 'All':
+                    if selected_profit_filter == 'Highest Profitable':
+                        # Green (>₹7K) + DC Movement
+                        round_df = round_df[(round_df['Status'] == 'DC Movement') | ((round_df['Status'] != 'DC Movement') & (round_df['Per_Day_Contribution'] >= 7000))]
+                    elif selected_profit_filter == 'Medium Profitable':
+                        # Amber (₹5-7K)
+                        round_df = round_df[(round_df['Status'] != 'DC Movement') & (round_df['Per_Day_Contribution'] >= 5000) & (round_df['Per_Day_Contribution'] < 7000)]
+                    elif selected_profit_filter == 'Less Profitable':
+                        # Red (₹3-5K) + Not Profitable (<₹3K)
+                        round_df = round_df[(round_df['Status'] != 'DC Movement') & (round_df['Per_Day_Contribution'] < 5000)]
 
                 st.caption(f"*Showing {len(round_df)} trips*")
                 st.markdown("---")
