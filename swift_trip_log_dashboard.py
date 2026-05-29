@@ -3526,6 +3526,14 @@ def main():
                     return parts[0].strip(), parts[1].strip()
                 return route, None
 
+            # Use full DB data (no month/party filter) sorted by vehicle+date
+            # so we can find the next empty trip after any loaded trip
+            full_df = st.session_state.df.copy()
+            full_df[['Origin', 'Destination']] = full_df['Route'].apply(
+                lambda x: pd.Series(extract_origin_dest(x))
+            )
+            full_df = full_df.sort_values(['VehicleNo', 'LoadingDate'], ascending=[True, True])
+
             frag_df[['Origin', 'Destination']] = frag_df['Route'].apply(
                 lambda x: pd.Series(extract_origin_dest(x))
             )
@@ -3533,22 +3541,17 @@ def main():
             # Sort by vehicle and loading date
             frag_df = frag_df.sort_values(['VehicleNo', 'LoadingDate'], ascending=[True, True])
 
+            # Month+party filter only applies to loaded trips
+            # For each loaded trip, find the very next trip for that vehicle from full DB
+            loaded_df = frag_df[frag_df['TripStatus'] == 'Loaded'].copy()
+
             # Process all loaded trips
             completed_trips = []  # Trips with matched empty
             ongoing_trips = []    # Trips without empty (ongoing or with onward_route)
 
-            for vehicle in frag_df['VehicleNo'].unique():
-                v_trips = frag_df[frag_df['VehicleNo'] == vehicle].reset_index(drop=True)
+            for _, current_trip in loaded_df.iterrows():
 
-                i = 0
-                while i < len(v_trips):
-                    current_trip = v_trips.iloc[i]
-
-                    # Only process loaded trips
-                    if current_trip['TripStatus'] != 'Loaded':
-                        i += 1
-                        continue
-
+                    vehicle = current_trip['VehicleNo']
                     loaded_distance = current_trip['Distance'] if pd.notna(current_trip['Distance']) else 0
                     revenue = current_trip['Freight'] if pd.notna(current_trip['Freight']) else 0
                     loaded_dest = str(current_trip['Destination']).upper().strip() if pd.notna(current_trip['Destination']) else ''
@@ -3556,7 +3559,6 @@ def main():
 
                     # Special handling for DC Movement trips - always green
                     if 'DC Movement' in str(party_name):
-                        # DC Movement - shuttle trips, always profitable (green)
                         loaded_exp = revenue * 0.752  # 75.2% of freight
                         completed_trips.append({
                             'VehicleNo': vehicle,
@@ -3573,7 +3575,6 @@ def main():
                             'Per_Day_Contribution': 10000,  # Always green (>7000)
                             'Status': 'DC Movement'
                         })
-                        i += 1
                         continue
 
                     # Special handling for "By Road" vehicles - no empty trip needed
@@ -3598,13 +3599,17 @@ def main():
                             'Per_Day_Contribution': per_day_contribution,
                             'Status': 'By Road'
                         })
-                        i += 1
                         continue
 
-                    # Check if next trip is matching empty
+                    # Find the very next trip for this vehicle from full DB (no month/party filter)
+                    # This ensures we always find the matching empty trip
+                    vehicle_all_trips = full_df[full_df['VehicleNo'] == vehicle]
+                    current_loading_date = current_trip['LoadingDate']
+                    next_trips = vehicle_all_trips[vehicle_all_trips['LoadingDate'] > current_loading_date]
+
                     has_matching_empty = False
-                    if i < len(v_trips) - 1:
-                        next_trip = v_trips.iloc[i + 1]
+                    if len(next_trips) > 0:
+                        next_trip = next_trips.iloc[0]  # Very next trip for this vehicle
                         if next_trip['TripStatus'] == 'Empty' and pd.notna(next_trip['Origin']):
                             empty_origin = str(next_trip['Origin']).upper().strip()
                             if loaded_dest and empty_origin and (
@@ -3641,7 +3646,6 @@ def main():
                                     'Per_Day_Contribution': per_day_contribution,
                                     'Status': 'Completed'
                                 })
-                                i += 2
                                 continue
 
                     # No matching empty - check for onward_route or suggest
@@ -3716,8 +3720,6 @@ def main():
                             'Per_Day_Contribution': per_day_contribution,
                             'Status': 'Ongoing/Estimated'
                         })
-
-                    i += 1
 
             # Combine all trips
             all_trips = completed_trips + ongoing_trips
