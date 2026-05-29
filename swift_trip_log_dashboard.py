@@ -3776,8 +3776,8 @@ def main():
                 red_count = len(non_dc_df[(non_dc_df['Per_Day_Contribution'] >= 3000) & (non_dc_df['Per_Day_Contribution'] < 5000)])
                 not_profit_count = len(non_dc_df[non_dc_df['Per_Day_Contribution'] < 3000])
 
-                # Count by status
-                completed_count = len(round_df[round_df['Status'] == 'Completed'])
+                # Count by status (DC Movement and By Road are completed trips)
+                completed_count = len(round_df[round_df['Status'].isin(['Completed', 'DC Movement', 'By Road'])])
                 ongoing_count = len(round_df[round_df['Status'] == 'Ongoing/Estimated'])
 
                 # Summary metrics
