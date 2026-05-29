@@ -4124,13 +4124,26 @@ def main():
                 export_df['Contribution_K'] = export_df['Contribution'] / 1000
                 export_df['Per_Day'] = export_df['Per_Day_Contribution'].round(0)
 
-                # Select and rename columns for export
+                # Determine profitability label
+                def get_profit_label(row):
+                    if row['Status'] == 'DC Movement':
+                        return 'Green'
+                    per_day = row['Per_Day_Contribution']
+                    if per_day >= 7000:
+                        return 'Green'
+                    elif per_day >= 5000:
+                        return 'Amber'
+                    elif per_day >= 3000:
+                        return 'Red'
+                    else:
+                        return 'Not Profitable'
+                export_df['Profit_Label'] = export_df.apply(get_profit_label, axis=1)
+
+                # Select and rename columns for export (excluding Revenue, Distance, Expense, Contribution, Status, Days)
                 export_cols = export_df[['VehicleNo', 'Date', 'Loaded_Route', 'Loaded_Party', 'Empty_Route',
-                                        'Loaded_Cars', 'Revenue_K', 'Total_Distance', 'Expense_K',
-                                        'Contribution_K', 'Calc_Days', 'Per_Day', 'Status']]
+                                        'Loaded_Cars', 'Profit_Label']]
                 export_cols.columns = ['Vehicle', 'Date', 'Loaded Route', 'Party', 'Return/Suggest',
-                                      'Cars', 'Revenue (K)', 'Distance', 'Expense (K)',
-                                      'Contribution (K)', 'Days', 'Per Day', 'Status']
+                                      'Cars', 'Profitability']
 
                 # Download button with Excel color coding
                 from io import BytesIO
@@ -4168,27 +4181,22 @@ def main():
 
                 # Write data with color coding
                 for row_idx, (_, row) in enumerate(export_df.iterrows(), 2):
-                    per_day = row['Per_Day_Contribution']
-                    status = row['Status']
+                    profit_label = row['Profit_Label']
 
-                    # Determine color based on per_day value
-                    if status == 'DC Movement':
-                        per_day_fill = green_fill
-                    elif per_day >= 7000:
-                        per_day_fill = green_fill
-                    elif per_day >= 5000:
-                        per_day_fill = amber_fill
-                    elif per_day >= 3000:
-                        per_day_fill = red_fill
+                    # Determine color based on profitability label
+                    if profit_label == 'Green':
+                        label_fill = green_fill
+                    elif profit_label == 'Amber':
+                        label_fill = amber_fill
+                    elif profit_label == 'Red':
+                        label_fill = red_fill
                     else:
-                        per_day_fill = None  # No color for not profitable
+                        label_fill = None  # No color for not profitable
 
                     # Write row data
                     row_data = [
                         row['VehicleNo'], row['Date'], row['Loaded_Route'], row['Loaded_Party'],
-                        row['Empty_Route'], row['Loaded_Cars'], round(row['Revenue_K'], 1),
-                        row['Total_Distance'], round(row['Expense_K'], 1), round(row['Contribution_K'], 1),
-                        row['Calc_Days'], round(row['Per_Day'], 0), row['Status']
+                        row['Empty_Route'], row['Loaded_Cars'], profit_label
                     ]
 
                     for col_idx, value in enumerate(row_data, 1):
@@ -4196,13 +4204,13 @@ def main():
                         cell.border = thin_border
                         cell.alignment = center_align
 
-                        # Apply color to Per Day column (column 12)
-                        if col_idx == 12 and per_day_fill:
-                            cell.fill = per_day_fill
-                            cell.font = Font(color="000000", bold=True)  # Black text for light colors
+                        # Apply color to Profitability column (column 7)
+                        if col_idx == 7 and label_fill:
+                            cell.fill = label_fill
+                            cell.font = Font(color="000000", bold=True)
 
                 # Adjust column widths
-                column_widths = [12, 12, 25, 30, 25, 6, 12, 10, 12, 12, 6, 10, 12]
+                column_widths = [12, 12, 25, 30, 25, 6, 15]
                 for col_idx, width in enumerate(column_widths, 1):
                     ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = width
 
