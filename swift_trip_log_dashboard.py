@@ -3508,11 +3508,11 @@ def main():
                 # Default rates
                 return 45.6, 40  # Default: loaded=45.6, empty=40
 
-            # Use month_df which is filtered by sidebar month filter
-            frag_df = month_df.copy()
+            # Use month_df filtered to loaded trips only - all filters apply only to loaded trips
+            frag_df = month_df[month_df['TripStatus'] == 'Loaded'].copy()
 
             if len(frag_df) == 0:
-                st.info("No trip data available for selected month.")
+                st.info("No loaded trip data available for selected month.")
                 return
 
             historical_routes = get_historical_empty_routes()
@@ -3541,15 +3541,12 @@ def main():
             # Sort by vehicle and loading date
             frag_df = frag_df.sort_values(['VehicleNo', 'LoadingDate'], ascending=[True, True])
 
-            # Month+party filter only applies to loaded trips
-            # For each loaded trip, find the very next trip for that vehicle from full DB
-            loaded_df = frag_df[frag_df['TripStatus'] == 'Loaded'].copy()
-
             # Process all loaded trips
+            # For each loaded trip, find the very next trip for that vehicle from full DB
             completed_trips = []  # Trips with matched empty
             ongoing_trips = []    # Trips without empty (ongoing or with onward_route)
 
-            for _, current_trip in loaded_df.iterrows():
+            for _, current_trip in frag_df.iterrows():
 
                     vehicle = current_trip['VehicleNo']
                     loaded_distance = current_trip['Distance'] if pd.notna(current_trip['Distance']) else 0
