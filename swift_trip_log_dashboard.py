@@ -369,6 +369,7 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
         'John Deere india Private Limited': 'John Deere India Private Limited',
         'Glovis India Pvt Ltd - Pune': 'Glovis India Pvt Ltd - Pune',
+        'Tata Passenger Electric Mobility Limited - Sanand': 'Tata Motors Pvt Ltd - Sanand',
         'shiv ansh logistics': 'Market Load',
         'Delhi Hubli Cargo Logistics Pvt. Ltd.': 'Market Load',
     }
