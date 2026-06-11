@@ -1125,7 +1125,7 @@ def main():
     # Call the month summary fragment
     month_summary_fragment()
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads (based on vehicle type)", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs"])
 
     with tab1:
         # Target vs Actual - Client-Wise Summary
@@ -2348,7 +2348,7 @@ def main():
         daily_loading_fragment()
 
     with tab3:
-        st.markdown("### Local/Pilot Loads")
+        st.markdown("### Local/Pilot Loads (based on vehicle type)")
 
         # Use fragment to prevent tab switching on filter change
         @st.fragment(run_every=REFRESH_15_MIN)
