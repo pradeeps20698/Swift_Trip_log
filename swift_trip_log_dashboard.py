@@ -2359,6 +2359,7 @@ def main():
             # Pre-load ALL vehicle types once at the start for better performance
             all_vehicles = load_all_vehicles_by_type()
             kia_vehicles = all_vehicles.get('TR_KIA_LCL', [])
+            mh_local_vehicles = all_vehicles.get('MH LOCAL NEW', [])
             kia_ap_vehicles = all_vehicles.get('TR_KIA_AP PASSING', [])
             haridwar_vehicles = all_vehicles.get('TR_HRD_LCL', [])
             gujarat_vehicles = all_vehicles.get('TR_Gujarat_LCL', [])
@@ -2394,6 +2395,12 @@ def main():
                 pattern = '|'.join([v.replace(' ', '.*') for v in kia_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
+            def get_mh_local(data):
+                if not mh_local_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in mh_local_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+
             def get_kia_ap_passing(data):
                 if not kia_ap_vehicles:
                     return data.head(0)
@@ -2425,6 +2432,7 @@ def main():
             haridwar_local = get_haridwar_local(loaded_month_df)
             road_pilot = get_road_pilot(loaded_month_df)
             kia_local = get_kia_local(loaded_month_df)
+            mh_local = get_mh_local(loaded_month_df)
             kia_ap_passing = get_kia_ap_passing(loaded_month_df)
             gujarat_local = get_gujarat_local(loaded_month_df)
             nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
@@ -2449,6 +2457,7 @@ def main():
                 get_summary(haridwar_local, 'Haridwar Local'),
                 get_summary(road_pilot, 'Road Pilot'),
                 get_summary(kia_local, 'Kia Local'),
+                get_summary(mh_local, 'MH Local'),
                 get_summary(kia_ap_passing, 'Kia AP Passing'),
                 get_summary(gujarat_local, 'Gujarat Local'),
                 get_summary(nsk_ckn_local, 'NSK/Ckn-north dedicated'),
@@ -2512,13 +2521,13 @@ def main():
                 </tbody>
             </table>
             """
-            components.html(summary_html, height=450)
+            components.html(summary_html, height=490)
 
             # Filter dropdown
             st.markdown("#### Details by Category")
             col_filter, col_download, col_empty = st.columns([1, 0.5, 2.5])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated']
+                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'MH Local', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -2532,6 +2541,8 @@ def main():
                 filtered_df = road_pilot
             elif selected_category == 'Kia Local':
                 filtered_df = kia_local
+            elif selected_category == 'MH Local':
+                filtered_df = mh_local
             elif selected_category == 'Kia AP Passing':
                 filtered_df = kia_ap_passing
             elif selected_category == 'Gujarat Local':
