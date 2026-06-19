@@ -4701,7 +4701,8 @@ def main():
                 # Hire Vehicle with blank tl_no
                 pending_hs = frag_cn_data[
                     (frag_cn_data['vehicle_type'] == 'Hire Vehicle') &
-                    ((frag_cn_data['tl_no'].isna()) | (frag_cn_data['tl_no'] == ''))
+                    ((frag_cn_data['tl_no'].isna()) | (frag_cn_data['tl_no'] == '')) &
+                    ~((frag_cn_data['billing_party'] == 'Ranjeet Singh Logistics') & (frag_cn_data['route'] == 'Pune - Pune'))
                 ].copy()
 
                 if not pending_hs.empty:
