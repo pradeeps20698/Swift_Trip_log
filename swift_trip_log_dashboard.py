@@ -1131,7 +1131,7 @@ def main():
     # Call the month summary fragment
     month_summary_fragment()
 
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads (based on vehicle type)", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["📊 Target vs Actual", "📅 Daily Loading Details", "🚚 Local/Pilot Loads (based on vehicle type)", "🗺️ Zone View", "🔄 NSK/Ckn Round Trips", "💰 Trip Profitability", "📋 Pending CN - Triplogs", "📄 Pending Hire Slip"])
 
     with tab1:
         # Target vs Actual - Client-Wise Summary
@@ -4689,6 +4689,8 @@ def main():
 
         cn_aging_fragment()
 
+    with tab8:
+        st.markdown("### Pending Hire Slip")
 
 if __name__ == "__main__":
     main()
