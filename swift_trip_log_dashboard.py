@@ -4743,6 +4743,7 @@ def main():
                         bp_summary['Qty'] = bp_summary['Qty'].astype(int)
                         bp_html = """
                         <style>.bp-sum { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        .bp-sum thead { position: sticky; top: 0; z-index: 10; }
                         .bp-sum th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
                         .bp-sum td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
                         .bp-sum tr:nth-child(even) { background-color: #1f2937; }</style>
@@ -4765,6 +4766,7 @@ def main():
                         hvp_summary['Qty'] = hvp_summary['Qty'].astype(int)
                         hvp_html = """
                         <style>.hvp-sum { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        .hvp-sum thead { position: sticky; top: 0; z-index: 10; }
                         .hvp-sum th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
                         .hvp-sum td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
                         .hvp-sum tr:nth-child(even) { background-color: #1f2937; }</style>
