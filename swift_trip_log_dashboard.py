@@ -4731,6 +4731,51 @@ def main():
                     month_html += "</div>"
                     st.markdown(month_html, unsafe_allow_html=True)
 
+                    # Billing Party and Hire Vehicle Party wise summaries
+                    sum_col1, sum_col2 = st.columns(2)
+
+                    with sum_col1:
+                        st.markdown("**Billing Party Summary**")
+                        bp_summary = pending_hs.groupby('billing_party').agg(
+                            CN_Count=('cn_no', 'count'),
+                            Qty=('qty', 'sum')
+                        ).reset_index().sort_values('CN_Count', ascending=False)
+                        bp_summary['Qty'] = bp_summary['Qty'].astype(int)
+                        bp_html = """
+                        <style>.bp-sum { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        .bp-sum th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
+                        .bp-sum td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
+                        .bp-sum tr:nth-child(even) { background-color: #1f2937; }</style>
+                        <div style="max-height: 350px; overflow-y: auto;">
+                        <table class="bp-sum"><thead><tr><th>#</th><th>Billing Party</th><th style="text-align:center;">CN Count</th><th style="text-align:center;">Qty</th></tr></thead><tbody>"""
+                        for idx, (_, r) in enumerate(bp_summary.iterrows(), 1):
+                            bp_html += f"<tr><td>{idx}</td><td>{r['billing_party']}</td><td style='text-align:center; color: #fbbf24;'>{r['CN_Count']}</td><td style='text-align:center; color: #34d399;'>{r['Qty']}</td></tr>"
+                        bp_html += f"<tr style='background-color:#1e40af; font-weight:bold;'><td></td><td>Total</td><td style='text-align:center; color: #fbbf24;'>{bp_summary['CN_Count'].sum()}</td><td style='text-align:center; color: #34d399;'>{bp_summary['Qty'].sum()}</td></tr>"
+                        bp_html += "</tbody></table></div>"
+                        components.html(bp_html, height=min(len(bp_summary) * 30 + 70, 400), scrolling=True)
+
+                    with sum_col2:
+                        st.markdown("**Hire Vehicle Party Summary**")
+                        hvp_summary = pending_hs.copy()
+                        hvp_summary['hire_vehicle_party'] = hvp_summary['hire_vehicle_party'].fillna('').replace('', 'Unknown')
+                        hvp_summary = hvp_summary.groupby('hire_vehicle_party').agg(
+                            CN_Count=('cn_no', 'count'),
+                            Qty=('qty', 'sum')
+                        ).reset_index().sort_values('CN_Count', ascending=False)
+                        hvp_summary['Qty'] = hvp_summary['Qty'].astype(int)
+                        hvp_html = """
+                        <style>.hvp-sum { width: 100%; border-collapse: collapse; font-size: 12px; }
+                        .hvp-sum th { background-color: #374151; color: white; padding: 6px 8px; text-align: left; }
+                        .hvp-sum td { padding: 5px 8px; border-bottom: 1px solid #4b5563; color: white; }
+                        .hvp-sum tr:nth-child(even) { background-color: #1f2937; }</style>
+                        <div style="max-height: 350px; overflow-y: auto;">
+                        <table class="hvp-sum"><thead><tr><th>#</th><th>Hire Vehicle Party</th><th style="text-align:center;">CN Count</th><th style="text-align:center;">Qty</th></tr></thead><tbody>"""
+                        for idx, (_, r) in enumerate(hvp_summary.iterrows(), 1):
+                            hvp_html += f"<tr><td>{idx}</td><td>{r['hire_vehicle_party']}</td><td style='text-align:center; color: #fbbf24;'>{r['CN_Count']}</td><td style='text-align:center; color: #34d399;'>{r['Qty']}</td></tr>"
+                        hvp_html += f"<tr style='background-color:#1e40af; font-weight:bold;'><td></td><td>Total</td><td style='text-align:center; color: #fbbf24;'>{hvp_summary['CN_Count'].sum()}</td><td style='text-align:center; color: #34d399;'>{hvp_summary['Qty'].sum()}</td></tr>"
+                        hvp_html += "</tbody></table></div>"
+                        components.html(hvp_html, height=min(len(hvp_summary) * 30 + 70, 400), scrolling=True)
+
                     # Build HTML table
                     hs_html = """
                     <style>
