@@ -180,7 +180,7 @@ def load_vendor_data():
             return pd.DataFrame()
 
         query = """
-            SELECT billing_party, cn_date, qty, basic_freight, route, origin, vehicle_no
+            SELECT billing_party, cn_date, qty, basic_freight, route, origin, vehicle_no, hire_vehicle_party
             FROM cn_data
             WHERE ((billing_party = 'R.sai Logistics India Pvt. Ltd.' AND (tl_no IS NULL OR tl_no = ''))
                OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle'))
@@ -199,7 +199,8 @@ def load_vendor_data():
             'basic_freight': 'Freight',
             'route': 'Route',
             'origin': 'Origin',
-            'vehicle_no': 'VehicleNo'
+            'vehicle_no': 'VehicleNo',
+            'hire_vehicle_party': 'HireVehicleParty'
         })
 
         # Convert date
@@ -657,8 +658,13 @@ def get_merged_vehicle_vendor_map():
     return merged
 
 
-def get_hv_vendor(vehicle_no, vendor_map):
-    """Map vehicle number to hire vendor name using merged map."""
+def get_hv_vendor(vehicle_no, vendor_map, hire_vehicle_party=None):
+    """Map vehicle number to hire vendor name.
+    Priority: 1) hire_vehicle_party from cn_data, 2) merged vehicle-vendor map."""
+    # First check hire_vehicle_party from cn_data
+    if hire_vehicle_party is not None and not pd.isna(hire_vehicle_party) and str(hire_vehicle_party).strip():
+        return str(hire_vehicle_party).strip()
+    # Fall back to vehicle-vendor map
     if pd.isna(vehicle_no) or not vehicle_no:
         return None
     v = str(vehicle_no).strip()
@@ -957,10 +963,10 @@ def main():
         vendor_df_sidebar = st.session_state.get('vendor_df', pd.DataFrame())
         unmapped_vehicles = []
         if not vendor_df_sidebar.empty:
-            all_veh = vendor_df_sidebar['VehicleNo'].dropna().unique()
-            for v in all_veh:
-                if get_hv_vendor(v, vendor_map_merged) is None:
-                    unmapped_vehicles.append(str(v).strip())
+            sidebar_cols = ['VehicleNo'] + (['HireVehicleParty'] if 'HireVehicleParty' in vendor_df_sidebar.columns else [])
+            for _, row in vendor_df_sidebar[sidebar_cols].drop_duplicates(subset='VehicleNo').dropna(subset='VehicleNo').iterrows():
+                if get_hv_vendor(row['VehicleNo'], vendor_map_merged, row.get('HireVehicleParty')) is None:
+                    unmapped_vehicles.append(str(row['VehicleNo']).strip())
             unmapped_vehicles = sorted(set(unmapped_vehicles))
 
         if unmapped_vehicles:
@@ -1558,7 +1564,8 @@ def main():
                 ].copy()
 
                 if not vendor_period.empty:
-                    vendor_period['HVParty'] = vendor_period['VehicleNo'].apply(lambda v: get_hv_vendor(v, merged_vmap))
+                    vendor_period['HVParty'] = vendor_period.apply(
+                        lambda row: get_hv_vendor(row['VehicleNo'], merged_vmap, row.get('HireVehicleParty')), axis=1)
                     hv_mapped = vendor_period[vendor_period['HVParty'].notna()]
                     hv_unmapped = vendor_period[vendor_period['HVParty'].isna()]
 
@@ -1896,7 +1903,8 @@ def main():
                         (frag_vendor_df['CNDate'] < pd.Timestamp(till_date) + pd.Timedelta(days=1))
                     ].copy()
                     if not _vp.empty:
-                        _vp['HVParty'] = _vp['VehicleNo'].apply(lambda v: get_hv_vendor(v, merged_vmap))
+                        _vp['HVParty'] = _vp.apply(
+                            lambda row: get_hv_vendor(row['VehicleNo'], merged_vmap, row.get('HireVehicleParty')), axis=1)
                         _vm = _vp[_vp['HVParty'].notna()]
                         if not _vm.empty:
                             pdf_vendor_summary = _vm.groupby('HVParty').agg(
