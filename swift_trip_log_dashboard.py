@@ -225,7 +225,7 @@ def load_cn_data():
         query = """
             SELECT cn_no, cn_date, billing_party, origin, route, vehicle_no,
                    qty, basic_freight, tl_no, branch, bill_no, pod_receipt_no,
-                   eta, vehicle_type
+                   eta, vehicle_type, hire_vehicle_party
             FROM cn_data
             WHERE (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
               AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
@@ -4691,6 +4691,107 @@ def main():
 
     with tab8:
         st.markdown("### Pending Hire Slip")
+
+        @st.fragment(run_every=REFRESH_10_MIN)
+        def pending_hire_slip_fragment():
+            refresh_session_data()
+            frag_cn_data = st.session_state.cn_data
+
+            if not frag_cn_data.empty:
+                # Hire Vehicle with blank tl_no
+                pending_hs = frag_cn_data[
+                    (frag_cn_data['vehicle_type'] == 'Hire Vehicle') &
+                    ((frag_cn_data['tl_no'].isna()) | (frag_cn_data['tl_no'] == ''))
+                ].copy()
+
+                if not pending_hs.empty:
+                    pending_hs = pending_hs.sort_values('cn_date', ascending=False)
+
+                    # Month-wise summary
+                    pending_hs['Month'] = pending_hs['cn_date'].dt.to_period('M')
+                    month_summary = pending_hs.groupby('Month').agg(
+                        Records=('cn_no', 'count'),
+                        Cars=('qty', 'sum')
+                    ).reset_index().sort_values('Month', ascending=False)
+                    month_summary['Cars'] = month_summary['Cars'].astype(int)
+                    month_summary['Month'] = month_summary['Month'].astype(str)
+
+                    st.caption(f"*Total: {len(pending_hs)} records | {int(pending_hs['qty'].sum())} cars*")
+
+                    # Month summary as compact HTML
+                    month_html = """<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 15px;">"""
+                    for _, mr in month_summary.iterrows():
+                        month_html += f"""
+                        <div style="background: #1e3a5f; padding: 8px 14px; border-radius: 6px; text-align: center;">
+                            <div style="color: #93c5fd; font-size: 11px;">{mr['Month']}</div>
+                            <div style="color: white; font-size: 16px; font-weight: bold;">{mr['Records']}</div>
+                            <div style="color: #6ee7b7; font-size: 11px;">{mr['Cars']} cars</div>
+                        </div>"""
+                    month_html += "</div>"
+                    st.markdown(month_html, unsafe_allow_html=True)
+
+                    # Build HTML table
+                    hs_html = """
+                    <style>
+                        .hs-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 12px; }
+                        .hs-table thead { position: sticky; top: 0; z-index: 10; }
+                        .hs-table th { background-color: #1e40af; color: white; padding: 8px; text-align: left; }
+                        .hs-table td { padding: 6px 8px; border-bottom: 1px solid #374151; color: white; }
+                        .hs-table tr:hover { background-color: #1f2937; }
+                        .hs-table tr:nth-child(even) { background-color: #111827; }
+                    </style>
+                    <div style="max-height: 600px; overflow-y: auto;">
+                    <table class="hs-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>CN No</th>
+                                <th>CN Date</th>
+                                <th>Branch</th>
+                                <th>Billing Party</th>
+                                <th>Vehicle No</th>
+                                <th>Route</th>
+                                <th>Hire Vehicle Party</th>
+                                <th style="text-align:center;">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                    """
+                    for idx, (_, row) in enumerate(pending_hs.iterrows(), 1):
+                        cn_date_str = row['cn_date'].strftime('%d-%b-%Y') if pd.notna(row['cn_date']) else ''
+                        hs_html += f"""
+                            <tr>
+                                <td>{idx}</td>
+                                <td>{row.get('cn_no', '') or ''}</td>
+                                <td>{cn_date_str}</td>
+                                <td>{row.get('branch', '') or ''}</td>
+                                <td>{row.get('billing_party', '') or ''}</td>
+                                <td>{row.get('vehicle_no', '') or ''}</td>
+                                <td>{row.get('route', '') or ''}</td>
+                                <td>{row.get('hire_vehicle_party', '') or ''}</td>
+                                <td style="text-align:center;">{int(row['qty']) if pd.notna(row['qty']) else ''}</td>
+                            </tr>
+                        """
+                    hs_html += "</tbody></table></div>"
+                    table_height = min(len(pending_hs) * 32 + 50, 650)
+                    components.html(hs_html, height=table_height, scrolling=True)
+
+                    # Download button
+                    dl_df = pending_hs[['cn_no', 'cn_date', 'branch', 'billing_party', 'vehicle_no', 'route', 'hire_vehicle_party', 'qty']].copy()
+                    dl_df['cn_date'] = dl_df['cn_date'].dt.strftime('%d-%b-%Y')
+                    st.download_button(
+                        label="📥 Download Pending Hire Slip Data",
+                        data=dl_df.to_csv(index=False),
+                        file_name=f"pending_hire_slip_{datetime.now().strftime('%Y%m%d')}.csv",
+                        mime="text/csv",
+                        key="pending_hs_download"
+                    )
+                else:
+                    st.success("No pending hire slip records found!")
+            else:
+                st.info("No data available.")
+
+        pending_hire_slip_fragment()
 
 if __name__ == "__main__":
     main()
