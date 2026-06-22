@@ -357,6 +357,7 @@ def get_vendor_client_mapping(billing_party, origin=None):
         # All below use vehicle_type = 'Hire Vehicle' logic
         'Kwick Living Private Limited': 'Kwick Living Private Limited',
         'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune': 'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune',
+        'SKODA AUTO VolkswagenIndia Pvt. Ltd-AGBD': 'SKODA AUTO VolkswagenIndia Pvt. Ltd-AGBD',
         'Glovis India Pvt Ltd - KIA': 'Glovis India Pvt Ltd - KIA',
         'Glovis India Pvt Ltd - Hyundai': 'Glovis India Pvt Ltd - Hyundai',
         'Honda Cars India Ltd - Tapukera': 'Honda Cars India Ltd - Tapukera',
@@ -777,6 +778,10 @@ def load_and_process_data():
     if 'Party' in df.columns:
         john_deere_mask = df['Party'].str.contains('John Deere', case=False, na=False)
         df.loc[john_deere_mask, 'DisplayParty'] = 'John Deere India Private Limited'
+
+        # Keep SKODA AGBD as its own row (NewPartyName merges it into the Pune row otherwise)
+        skoda_agbd_mask = df['Party'].str.contains('SKODA AUTO VolkswagenIndia Pvt. Ltd-AGBD', case=False, na=False)
+        df.loc[skoda_agbd_mask, 'DisplayParty'] = 'SKODA AUTO VolkswagenIndia Pvt. Ltd-AGBD'
 
     # Normalize party names (merge variations into single name)
     df['DisplayParty'] = df['DisplayParty'].apply(normalize_party_name)
@@ -1233,13 +1238,39 @@ def main():
             summary['Total_Cars'] = summary['Own_Cars'] + summary['Vendor_Cars']
             summary['Total_Freight'] = summary['Own_Freight'] + summary['Vendor_Freight']
 
-            # Add comparison data
+            # Add comparison data (Own + Vendor, so it matches the current period's Total)
+            # 1. Own comparison from swift_trip_log (frag_df)
             if not compare_df.empty:
-                compare_summary = compare_df.groupby('DisplayParty').agg({
+                compare_own = compare_df.groupby('DisplayParty').agg({
                     'CarQty': 'sum',
                     'Freight': 'sum'
                 }).reset_index()
-                compare_summary.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
+                compare_own.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
+            else:
+                compare_own = pd.DataFrame(columns=['Party', 'Compare_Cars', 'Compare_Freight'])
+
+            # 2. Vendor comparison from cn_data (frag_vendor_df), same mapping as current period
+            compare_vendor = pd.DataFrame(columns=['Party', 'Compare_Cars', 'Compare_Freight'])
+            if not frag_vendor_df.empty:
+                vendor_compare = frag_vendor_df[
+                    (frag_vendor_df['CNDate'] >= pd.Timestamp(compare_month)) &
+                    (frag_vendor_df['CNDate'] < pd.Timestamp(compare_till_date) + pd.Timedelta(days=1))
+                ]
+                vendor_compare = vendor_compare[vendor_compare['MappedParty'].notna()]
+                if not vendor_compare.empty:
+                    compare_vendor = vendor_compare.groupby('MappedParty').agg({
+                        'CarQty': 'sum',
+                        'Freight': 'sum'
+                    }).reset_index()
+                    compare_vendor.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
+
+            # 3. Combine Own + Vendor into a single comparison summary
+            compare_summary = pd.concat([compare_own, compare_vendor], ignore_index=True)
+            if not compare_summary.empty:
+                compare_summary = compare_summary.groupby('Party', as_index=False).agg({
+                    'Compare_Cars': 'sum',
+                    'Compare_Freight': 'sum'
+                })
                 summary = summary.merge(compare_summary, on='Party', how='outer')
                 summary['Compare_Cars'] = summary['Compare_Cars'].fillna(0)
                 summary['Compare_Freight'] = summary['Compare_Freight'].fillna(0)
