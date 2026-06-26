@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Streamlit secrets (DB credentials)
+.streamlit/secrets.toml
+
 # Dependencies
 node_modules/
 

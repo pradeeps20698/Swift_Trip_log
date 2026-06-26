@@ -182,8 +182,8 @@ def load_vendor_data():
         query = """
             SELECT billing_party, cn_date, qty, basic_freight, route, origin, vehicle_no, hire_vehicle_party
             FROM cn_data
-            WHERE ((billing_party = 'R.sai Logistics India Pvt. Ltd.' AND (tl_no IS NULL OR tl_no = ''))
-               OR (billing_party != 'R.sai Logistics India Pvt. Ltd.' AND vehicle_type = 'Hire Vehicle'))
+            WHERE ((billing_party = 'R.sai Logistics India Pvt. Ltd.' AND (tl_no IS NULL OR tl_no = '' AND vehicle_type = 'Own Vehicle'))
+               OR (vehicle_type = 'Hire Vehicle'))
                AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
                AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
                AND (is_active = true OR is_active = 'Yes')
@@ -370,6 +370,7 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'M/S Mohan Logistics Private  Limited': 'M/S Mohan Logistics Private Limited',
         'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
         'John Deere india Private Limited': 'John Deere India Private Limited',
+        'ESCORTS KUBOTA LIMITED': 'ESCORTS KUBOTA LIMITED',
         'Glovis India Pvt Ltd - Pune': 'Glovis India Pvt Ltd - Pune',
         'Tata Passenger Electric Mobility Limited - Sanand': 'Tata Motors Pvt Ltd - Sanand',
         'shiv ansh logistics': 'Market Load',
