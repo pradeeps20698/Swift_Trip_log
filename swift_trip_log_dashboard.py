@@ -4460,8 +4460,8 @@ def main():
             refresh_session_data()
             frag_df = st.session_state.df
 
-            # D-3 date filter (show trips loaded on or before 3 days ago)
-            d_minus_3 = datetime.now().date() - timedelta(days=3)
+            # D-1 date filter (show trips loaded on or before yesterday)
+            d_minus_1 = datetime.now().date() - timedelta(days=1)
 
             # Load excluded trips from database
             excluded_trips = load_excluded_trips()
@@ -4473,11 +4473,11 @@ def main():
                 (frag_df['LoadingDateOnly'] <= month_end.date())
             ].copy()
 
-            # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-3
+            # Filter trips with pending CN (LR numbers missing or empty) and loading date <= D-1
             pending_cn_df = pending_data[
                 (pending_data['TripStatus'] == 'Loaded') &
                 ((pending_data['LRNos'].isna()) | (pending_data['LRNos'] == '') | (pending_data['LRNos'].str.strip() == '')) &
-                (pending_data['LoadingDate'].dt.date <= d_minus_3) &
+                (pending_data['LoadingDate'].dt.date <= d_minus_1) &
                 (~pending_data['TLHSNo'].isin(excluded_trips))
             ].copy()
 
@@ -4523,7 +4523,7 @@ def main():
                 except Exception as e:
                     st.warning(f"Could not cross-check with cn_data: {e}")
 
-            st.caption(f"*Showing trips loaded on or before {d_minus_3.strftime('%d-%b-%Y')} (D-3)*")
+            st.caption(f"*Showing trips loaded on or before {d_minus_1.strftime('%d-%b-%Y')} (D-1) (till yesterday)*")
 
             if len(pending_cn_df) > 0:
                 # Sort by loading date
