@@ -2408,6 +2408,12 @@ def main():
             road_pilot_vehicles = all_vehicles.get('Road Pilot', [])
             sanjeev_mishra_vehicles = all_vehicles.get('Sanjeev Mishra pilot', [])
 
+            # Manual override: force these two vehicles into Patna Local regardless of
+            # their vehicle_type in the DB (they are tagged 'Sanjeev Mishra pilot').
+            _patna_override = ['0986 GJ08AU', '0722 GJ08AU']
+            sanjeev_mishra_vehicles = [v for v in sanjeev_mishra_vehicles if v not in _patna_override]
+            patna_vehicles = patna_vehicles + [v for v in _patna_override if v not in patna_vehicles]
+
             # Create filter functions for each category (using pre-loaded vehicle lists)
             def get_toyota_local(data):
                 return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
