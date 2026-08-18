@@ -2404,6 +2404,7 @@ def main():
             haridwar_vehicles = all_vehicles.get('TR_HRD_LCL', [])
             gujarat_vehicles = all_vehicles.get('TR_Gujarat_LCL', [])
             nsk_ckn_vehicles = all_vehicles.get('NSK/Ckn-north dedicated', [])
+            aiccp_vehicles = all_vehicles.get('AICCP', [])
             patna_vehicles = all_vehicles.get('TR_Patna_LCL_4018 BS6', [])
             road_pilot_vehicles = all_vehicles.get('Road Pilot', [])
             sanjeev_mishra_vehicles = all_vehicles.get('Sanjeev Mishra pilot', [])
@@ -2472,6 +2473,12 @@ def main():
                 pattern = '|'.join([v.replace(' ', '.*') for v in nsk_ckn_vehicles])
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
+            def get_aiccp_local(data):
+                if not aiccp_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in aiccp_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+
             # Filter month_df to only include loaded trips
             loaded_month_df = month_df[
                 (month_df['DisplayParty'] != '') &
@@ -2490,6 +2497,7 @@ def main():
             kia_ap_passing = get_kia_ap_passing(loaded_month_df)
             gujarat_local = get_gujarat_local(loaded_month_df)
             nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
+            aiccp_local = get_aiccp_local(loaded_month_df)
 
             # Summary data for all categories (including unique vehicle count)
             def get_summary(df, category_name):
@@ -2516,6 +2524,7 @@ def main():
                 get_summary(kia_ap_passing, 'Kia AP Passing'),
                 get_summary(gujarat_local, 'Gujarat Local'),
                 get_summary(nsk_ckn_local, 'NSK/Ckn-north dedicated'),
+                get_summary(aiccp_local, 'AICCP'),
             ]
 
             # Summary Section
@@ -2576,13 +2585,13 @@ def main():
                 </tbody>
             </table>
             """
-            components.html(summary_html, height=535)
+            components.html(summary_html, height=580)
 
             # Filter dropdown
             st.markdown("#### Details by Category")
             col_filter, col_download, col_empty = st.columns([1, 0.5, 2.5])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'MH Local', 'Sanjeev Mishra pilot', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated']
+                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'Kia Local', 'MH Local', 'Sanjeev Mishra pilot', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated', 'AICCP']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -2604,8 +2613,10 @@ def main():
                 filtered_df = kia_ap_passing
             elif selected_category == 'Gujarat Local':
                 filtered_df = gujarat_local
-            else:
+            elif selected_category == 'NSK/Ckn-north dedicated':
                 filtered_df = nsk_ckn_local
+            else:
+                filtered_df = aiccp_local
 
             if len(filtered_df) > 0:
                 # Sort by LoadingDate ascending
