@@ -2399,7 +2399,7 @@ def main():
 
             # Pre-load ALL vehicle types once at the start for better performance
             all_vehicles = load_all_vehicles_by_type()
-            kia_vehicles = all_vehicles.get('TR_KIA_LCL', [])
+            kia_vehicles = all_vehicles.get('KIA/HYUNDAI LOCAL', [])
             mh_local_vehicles = all_vehicles.get('MH LOCAL NEW', [])
             kia_ap_vehicles = all_vehicles.get('TR_KIA_AP PASSING', [])
             haridwar_vehicles = all_vehicles.get('TR_HRD_LCL', [])
