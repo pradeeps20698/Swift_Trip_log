@@ -2517,13 +2517,9 @@ def main():
             summary_data = [
                 get_summary(toyota_local, 'Toyota Local'),
                 get_summary(patna_local, 'Patna Local'),
-                get_summary(haridwar_local, 'Haridwar Local'),
-                get_summary(road_pilot, 'Road Pilot'),
                 get_summary(kia_local, 'KIA/HYUNDAI LOCAL'),
                 get_summary(mh_local, 'MH Local'),
                 get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot'),
-                get_summary(kia_ap_passing, 'Kia AP Passing'),
-                get_summary(gujarat_local, 'Gujarat Local'),
                 get_summary(nsk_ckn_local, 'NSK/Ckn-north dedicated'),
                 get_summary(aiccp_local, 'AICCP'),
             ]
@@ -2592,7 +2588,7 @@ def main():
             st.markdown("#### Details by Category")
             col_filter, col_download, col_empty = st.columns([1, 0.5, 2.5])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'Haridwar Local', 'Road Pilot', 'KIA/HYUNDAI LOCAL', 'MH Local', 'Sanjeev Mishra pilot', 'Kia AP Passing', 'Gujarat Local', 'NSK/Ckn-north dedicated', 'AICCP']
+                category_options = ['Toyota Local', 'Patna Local', 'KIA/HYUNDAI LOCAL', 'MH Local', 'Sanjeev Mishra pilot', 'NSK/Ckn-north dedicated', 'AICCP']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -2600,20 +2596,12 @@ def main():
                 filtered_df = toyota_local
             elif selected_category == 'Patna Local':
                 filtered_df = patna_local
-            elif selected_category == 'Haridwar Local':
-                filtered_df = haridwar_local
-            elif selected_category == 'Road Pilot':
-                filtered_df = road_pilot
             elif selected_category == 'KIA/HYUNDAI LOCAL':
                 filtered_df = kia_local
             elif selected_category == 'MH Local':
                 filtered_df = mh_local
             elif selected_category == 'Sanjeev Mishra pilot':
                 filtered_df = sanjeev_mishra_pilot
-            elif selected_category == 'Kia AP Passing':
-                filtered_df = kia_ap_passing
-            elif selected_category == 'Gujarat Local':
-                filtered_df = gujarat_local
             elif selected_category == 'NSK/Ckn-north dedicated':
                 filtered_df = nsk_ckn_local
             else:
