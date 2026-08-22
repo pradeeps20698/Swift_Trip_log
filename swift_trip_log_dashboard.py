@@ -357,6 +357,7 @@ def get_vendor_client_mapping(billing_party, origin=None):
         # All below use vehicle_type = 'Hire Vehicle' logic
         'Kwick Living Private Limited': 'Kwick Living Private Limited',
         'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune': 'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune',
+        'SKODA AUTO volkswagen lndia Private Limited': 'SKODA AUTO VolkswagenIndia Pvt. Ltd - Pune',
         'SKODA AUTO VolkswagenIndia Pvt. Ltd-AGBD': 'SKODA AUTO VolkswagenIndia Pvt. Ltd-AGBD',
         'Glovis India Pvt Ltd - KIA': 'Glovis India Pvt Ltd - KIA',
         'Glovis India Pvt Ltd - Hyundai': 'Glovis India Pvt Ltd - Hyundai',
