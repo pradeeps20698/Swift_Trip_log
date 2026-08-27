@@ -165,6 +165,16 @@ def load_triplog_data():
             'report_unloading_date': 'ReportUnloadingDate'
         }
         df = df.rename(columns=column_mapping)
+
+        # Freight fallback: when 'freight' is zero/blank, use 'lr_freight' instead.
+        # When 'freight' has a value, keep using 'freight'. Applied here so every
+        # tab and overall box that reads 'Freight' picks up the same logic.
+        if 'Freight' in df.columns:
+            df['Freight'] = pd.to_numeric(df['Freight'], errors='coerce').fillna(0)
+            if 'LRFreight' in df.columns:
+                lr_freight = pd.to_numeric(df['LRFreight'], errors='coerce').fillna(0)
+                df['Freight'] = df['Freight'].where(df['Freight'] != 0, lr_freight)
+
         return df
     except Exception as e:
         st.error(f"Error loading triplog data from database: {e}")
