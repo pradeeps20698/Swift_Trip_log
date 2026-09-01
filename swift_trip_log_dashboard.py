@@ -195,7 +195,7 @@ def load_vendor_data():
             WHERE ((billing_party = 'R.sai Logistics India Pvt. Ltd.' AND (tl_no IS NULL OR tl_no = '' AND vehicle_type = 'Own Vehicle'))
                OR (vehicle_type = 'Hire Vehicle'))
                AND (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-               AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+               AND (billing_party IS NULL OR billing_party NOT ILIKE '%Ranjeet Singh Logistics%')
                AND (is_active = true OR is_active = 'Yes')
         """
         df = pd.read_sql_query(query, conn)
@@ -238,7 +238,7 @@ def load_cn_data():
                    eta, vehicle_type, hire_vehicle_party
             FROM cn_data
             WHERE (cn_no IS NULL OR cn_no NOT LIKE 'TEST%')
-              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+              AND (billing_party IS NULL OR billing_party NOT ILIKE '%Ranjeet Singh Logistics%')
               AND (is_active = true OR is_active = 'Yes')
         """
         df = pd.read_sql_query(query, conn)
@@ -494,7 +494,7 @@ def load_cn_cross_check_data():
             SELECT DISTINCT cn_date, vehicle_no
             FROM cn_data
             WHERE cn_date IS NOT NULL AND vehicle_no IS NOT NULL
-              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+              AND (billing_party IS NULL OR billing_party NOT ILIKE '%Ranjeet Singh Logistics%')
               AND (is_active = true OR is_active = 'Yes')
         """
         cn_records = pd.read_sql_query(cn_query, conn)
@@ -506,7 +506,7 @@ def load_cn_cross_check_data():
               AND vehicle_type = 'Own Vehicle'
               AND route IS NOT NULL AND route != ''
               AND vehicle_no IS NOT NULL AND vehicle_no != ''
-              AND NOT (billing_party = 'Ranjeet Singh Logistics' AND basic_freight = 65000)
+              AND (billing_party IS NULL OR billing_party NOT ILIKE '%Ranjeet Singh Logistics%')
               AND (is_active = true OR is_active = 'Yes')
         """
         own_vehicle_records = pd.read_sql_query(own_vehicle_query, conn)
