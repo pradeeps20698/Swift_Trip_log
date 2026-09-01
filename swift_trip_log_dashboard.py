@@ -2465,10 +2465,10 @@ def main():
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_sanjeev_mishra_pilot(data):
-                if not sanjeev_mishra_vehicles:
+                # Based on driver name (contains "S Mishra"), not vehicle_type from swift_vehicles
+                if 'DriverName' not in data.columns:
                     return data.head(0)
-                pattern = '|'.join([v.replace(' ', '.*') for v in sanjeev_mishra_vehicles])
-                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+                return data[data['DriverName'].str.contains('S Mishra', case=False, na=False)]
 
             def get_kia_ap_passing(data):
                 if not kia_ap_vehicles:
@@ -2489,10 +2489,10 @@ def main():
                 return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_aiccp_local(data):
-                if not aiccp_vehicles:
+                # Based on driver name (contains "AICCP"), not vehicle_type from swift_vehicles
+                if 'DriverName' not in data.columns:
                     return data.head(0)
-                pattern = '|'.join([v.replace(' ', '.*') for v in aiccp_vehicles])
-                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
+                return data[data['DriverName'].str.contains('AICCP', case=False, na=False)]
 
             # Filter month_df to only include loaded trips
             loaded_month_df = month_df[
@@ -2501,18 +2501,25 @@ def main():
                 (month_df['CarQty'] > 0)
             ]
 
-            # Get data for each category (using loaded trips only)
-            toyota_local = get_toyota_local(loaded_month_df)
-            patna_local = get_patna_local(loaded_month_df)
-            haridwar_local = get_haridwar_local(loaded_month_df)
-            road_pilot = get_road_pilot(loaded_month_df)
-            kia_local = get_kia_local(loaded_month_df)
-            mh_local = get_mh_local(loaded_month_df)
+            # Driver-based categories take priority (Sanjeev Mishra pilot, AICCP).
+            # Compute them first, then exclude their trips from all vehicle-based
+            # categories so no trip is double-counted / overlaps across categories.
             sanjeev_mishra_pilot = get_sanjeev_mishra_pilot(loaded_month_df)
-            kia_ap_passing = get_kia_ap_passing(loaded_month_df)
-            gujarat_local = get_gujarat_local(loaded_month_df)
-            nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
             aiccp_local = get_aiccp_local(loaded_month_df)
+
+            driver_based_idx = set(sanjeev_mishra_pilot.index) | set(aiccp_local.index)
+            vehicle_month_df = loaded_month_df.drop(index=driver_based_idx, errors='ignore')
+
+            # Get data for vehicle-based categories (driver-based trips excluded)
+            toyota_local = get_toyota_local(vehicle_month_df)
+            patna_local = get_patna_local(vehicle_month_df)
+            haridwar_local = get_haridwar_local(vehicle_month_df)
+            road_pilot = get_road_pilot(vehicle_month_df)
+            kia_local = get_kia_local(vehicle_month_df)
+            mh_local = get_mh_local(vehicle_month_df)
+            kia_ap_passing = get_kia_ap_passing(vehicle_month_df)
+            gujarat_local = get_gujarat_local(vehicle_month_df)
+            nsk_ckn_local = get_nsk_ckn_local(vehicle_month_df)
 
             # Summary data for all categories (including unique vehicle count)
             def get_summary(df, category_name):
