@@ -2540,9 +2540,9 @@ def main():
                 get_summary(patna_local, 'Patna Local'),
                 get_summary(kia_local, 'KIA/HYUNDAI LOCAL'),
                 get_summary(mh_local, 'MH Local'),
-                get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot'),
+                get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot (Based on Driver name)'),
                 get_summary(nsk_ckn_local, 'NSK/Ckn-north dedicated'),
-                get_summary(aiccp_local, 'AICCP'),
+                get_summary(aiccp_local, 'AICCP (Based on Driver name)'),
             ]
 
             # Summary Section
