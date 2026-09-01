@@ -378,6 +378,8 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'Tata Passenger Electric Mobility Limited - Pune': 'Tata Motors Pvt Ltd - Pune',
         'JSW MG Motor India Private Limited': 'JSW MG Motor India Private Limited',
         'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) BLR': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
+        'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED-MAHARASHTRA': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
+        'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED-HARYANA': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
         'M/S Mohan Logistics Private  Limited': 'M/S Mohan Logistics Private Limited',
         'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
         'John Deere india Private Limited': 'John Deere India Private Limited',
@@ -716,7 +718,9 @@ def normalize_party_name(party_name):
         return "Market Load"
 
     # VALUEDRIVE mappings
-    if party_upper == "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) UP":
+    if party_upper in ("VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) UP",
+                       "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED-MAHARASHTRA",
+                       "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED-HARYANA"):
         return "VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)"
 
     # John Deere mappings
