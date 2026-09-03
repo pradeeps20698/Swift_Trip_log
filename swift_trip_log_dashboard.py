@@ -1178,7 +1178,7 @@ def main():
                 yesterday = (datetime.now() - timedelta(days=1)).date()
                 till_date = st.date_input("Till Date", min(yesterday, month_end.date()))
             with col3:
-                compare_month = st.date_input("Compare With Month", datetime(2026, 7, 1).date())
+                compare_month = st.date_input("Compare With Month", datetime(2026, 8, 1).date())
             with col4:
                 compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
 
