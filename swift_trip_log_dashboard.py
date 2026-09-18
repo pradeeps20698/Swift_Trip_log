@@ -1261,12 +1261,12 @@ def main():
                     'CarQty': 'sum',
                     'Freight': 'sum'
                 }).reset_index()
-                compare_own.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
+                compare_own.columns = ['Party', 'Compare_Own_Cars', 'Compare_Own_Freight']
             else:
-                compare_own = pd.DataFrame(columns=['Party', 'Compare_Cars', 'Compare_Freight'])
+                compare_own = pd.DataFrame(columns=['Party', 'Compare_Own_Cars', 'Compare_Own_Freight'])
 
             # 2. Vendor comparison from cn_data (frag_vendor_df), same mapping as current period
-            compare_vendor = pd.DataFrame(columns=['Party', 'Compare_Cars', 'Compare_Freight'])
+            compare_vendor = pd.DataFrame(columns=['Party', 'Compare_Vendor_Cars', 'Compare_Vendor_Freight'])
             if not frag_vendor_df.empty:
                 vendor_compare = frag_vendor_df[
                     (frag_vendor_df['CNDate'] >= pd.Timestamp(compare_month)) &
@@ -1278,18 +1278,14 @@ def main():
                         'CarQty': 'sum',
                         'Freight': 'sum'
                     }).reset_index()
-                    compare_vendor.columns = ['Party', 'Compare_Cars', 'Compare_Freight']
+                    compare_vendor.columns = ['Party', 'Compare_Vendor_Cars', 'Compare_Vendor_Freight']
 
-            # 3. Combine Own + Vendor into a single comparison summary
-            compare_summary = pd.concat([compare_own, compare_vendor], ignore_index=True)
+            # 3. Merge Own and Vendor comparison summaries (kept separate for bifurcation)
+            compare_summary = compare_own.merge(compare_vendor, on='Party', how='outer')
             if not compare_summary.empty:
-                compare_summary = compare_summary.groupby('Party', as_index=False).agg({
-                    'Compare_Cars': 'sum',
-                    'Compare_Freight': 'sum'
-                })
                 summary = summary.merge(compare_summary, on='Party', how='outer')
-                summary['Compare_Cars'] = summary['Compare_Cars'].fillna(0)
-                summary['Compare_Freight'] = summary['Compare_Freight'].fillna(0)
+                for _cmp_col in ['Compare_Own_Cars', 'Compare_Own_Freight', 'Compare_Vendor_Cars', 'Compare_Vendor_Freight']:
+                    summary[_cmp_col] = summary[_cmp_col].fillna(0)
                 # Fill NaN for current period columns when party exists only in comparison period
                 summary['Trips'] = summary['Trips'].fillna(0)
                 summary['Own_Cars'] = summary['Own_Cars'].fillna(0)
@@ -1304,8 +1300,14 @@ def main():
                     axis=1
                 )
             else:
-                summary['Compare_Cars'] = 0
-                summary['Compare_Freight'] = 0
+                summary['Compare_Own_Cars'] = 0
+                summary['Compare_Own_Freight'] = 0
+                summary['Compare_Vendor_Cars'] = 0
+                summary['Compare_Vendor_Freight'] = 0
+
+            # Derived comparison totals (Own + Vendor)
+            summary['Compare_Cars'] = summary['Compare_Own_Cars'] + summary['Compare_Vendor_Cars']
+            summary['Compare_Freight'] = summary['Compare_Own_Freight'] + summary['Compare_Vendor_Freight']
 
             # Build final table with category totals
             category_order = ['Honda', 'M & M', 'Toyota', 'Glovis', 'Skoda', 'Tata', 'John Deere', 'Spinny', 'JSW MG', 'R.sai', 'Mohan Logistics', 'SAI Auto', 'Kwick', 'Escorts', 'Market Load', 'Other']
@@ -1324,7 +1326,7 @@ def main():
 
             final_rows = []
             single_party_rows = []  # Single-party categories shown after grouped ones
-            grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Cars_Comp': 0, 'Freight_Comp': 0, 'Target_SQR': 0}
+            grand_total = {'Own': 0, 'Vendor': 0, 'Total': 0, 'Own_F': 0, 'Vendor_F': 0, 'Total_F': 0, 'Own_Comp': 0, 'Vendor_Comp': 0, 'Cars_Comp': 0, 'Own_Comp_F': 0, 'Vendor_Comp_F': 0, 'Freight_Comp': 0, 'Target_SQR': 0}
 
             for category in category_order:
                 cat_df = summary[summary['category'] == category].copy()
@@ -1347,7 +1349,11 @@ def main():
                                 'Own_F': row['Own_Freight'],
                                 'Vendor_F': row['Vendor_Freight'],
                                 'Total_F': row['Total_Freight'],
+                                'Own_Comp': int(row['Compare_Own_Cars']),
+                                'Vendor_Comp': int(row['Compare_Vendor_Cars']),
                                 'Cars_Comp': int(row['Compare_Cars']),
+                                'Own_Comp_F': row['Compare_Own_Freight'],
+                                'Vendor_Comp_F': row['Compare_Vendor_Freight'],
                                 'Freight_Comp': row['Compare_Freight'],
                                 'is_total': False,
                                 'category': category
@@ -1363,7 +1369,11 @@ def main():
                             'Own_F': cat_df['Own_Freight'].sum(),
                             'Vendor_F': cat_df['Vendor_Freight'].sum(),
                             'Total_F': cat_df['Total_Freight'].sum(),
+                            'Own_Comp': int(cat_df['Compare_Own_Cars'].sum()),
+                            'Vendor_Comp': int(cat_df['Compare_Vendor_Cars'].sum()),
                             'Cars_Comp': int(cat_df['Compare_Cars'].sum()),
+                            'Own_Comp_F': cat_df['Compare_Own_Freight'].sum(),
+                            'Vendor_Comp_F': cat_df['Compare_Vendor_Freight'].sum(),
                             'Freight_Comp': cat_df['Compare_Freight'].sum(),
                             'is_total': True,
                             'category': category
@@ -1383,7 +1393,11 @@ def main():
                             'Own_F': row['Own_Freight'],
                             'Vendor_F': row['Vendor_Freight'],
                             'Total_F': row['Total_Freight'],
+                            'Own_Comp': int(row['Compare_Own_Cars']),
+                            'Vendor_Comp': int(row['Compare_Vendor_Cars']),
                             'Cars_Comp': int(row['Compare_Cars']),
+                            'Own_Comp_F': row['Compare_Own_Freight'],
+                            'Vendor_Comp_F': row['Compare_Vendor_Freight'],
                             'Freight_Comp': row['Compare_Freight'],
                             'is_total': False,
                             'category': category
@@ -1399,7 +1413,11 @@ def main():
                     grand_total['Own_F'] += cat_df['Own_Freight'].sum()
                     grand_total['Vendor_F'] += cat_df['Vendor_Freight'].sum()
                     grand_total['Total_F'] += cat_df['Total_Freight'].sum()
+                    grand_total['Own_Comp'] += int(cat_df['Compare_Own_Cars'].sum())
+                    grand_total['Vendor_Comp'] += int(cat_df['Compare_Vendor_Cars'].sum())
                     grand_total['Cars_Comp'] += int(cat_df['Compare_Cars'].sum())
+                    grand_total['Own_Comp_F'] += cat_df['Compare_Own_Freight'].sum()
+                    grand_total['Vendor_Comp_F'] += cat_df['Compare_Vendor_Freight'].sum()
                     grand_total['Freight_Comp'] += cat_df['Compare_Freight'].sum()
 
             # Add single-party categories after all grouped categories
@@ -1415,7 +1433,11 @@ def main():
                 'Own_F': grand_total['Own_F'],
                 'Vendor_F': grand_total['Vendor_F'],
                 'Total_F': grand_total['Total_F'],
+                'Own_Comp': grand_total['Own_Comp'],
+                'Vendor_Comp': grand_total['Vendor_Comp'],
                 'Cars_Comp': grand_total['Cars_Comp'],
+                'Own_Comp_F': grand_total['Own_Comp_F'],
+                'Vendor_Comp_F': grand_total['Vendor_Comp_F'],
                 'Freight_Comp': grand_total['Freight_Comp'],
                 'is_total': True,
                 'category': 'Grand'
@@ -1523,23 +1545,29 @@ def main():
             <table class="custom-table">
                 <thead>
                     <tr>
-                        <th class="header-group text-left col-divider-right" style="width: 25%;">Client - Wise</th>
-                        <th class="header-group text-center col-divider-right" style="width: 8%;">Target SOB</th>
+                        <th class="header-group text-left col-divider-right" rowspan="3" style="width: 25%; vertical-align: middle;">Client - Wise</th>
+                        <th class="header-group text-center col-divider-right" rowspan="3" style="width: 8%; vertical-align: middle;">Target SOB</th>
                         <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">No. of Cars</th>
                         <th class="header-group text-center col-divider-right" colspan="3" style="background-color: #1e3a5f;">Freight (₹ Lakhs)</th>
-                        <th class="header-group text-center" colspan="2" style="background-color: #0e4a6f;">Comparison (Till {compare_date})</th>
+                        <th class="header-group text-center" colspan="6" style="background-color: #0e4a6f;">Comparison (Till {compare_date})</th>
                     </tr>
                     <tr class="header-sub">
-                        <th class="col-divider-right"></th>
-                        <th class="col-divider-right"></th>
+                        <th rowspan="2" style="vertical-align: middle;">Own</th>
+                        <th rowspan="2" style="vertical-align: middle;">Vendor</th>
+                        <th rowspan="2" class="col-divider-right" style="vertical-align: middle;">Total</th>
+                        <th rowspan="2" style="vertical-align: middle;">Own</th>
+                        <th rowspan="2" style="vertical-align: middle;">Vendor</th>
+                        <th rowspan="2" class="col-divider-right" style="vertical-align: middle;">Total</th>
+                        <th class="col-divider-right" colspan="3" style="background-color: #0e4a6f;">No. of Cars</th>
+                        <th colspan="3" style="background-color: #0e4a6f;">Freight (₹ Lakhs)</th>
+                    </tr>
+                    <tr class="header-sub">
                         <th>Own</th>
                         <th>Vendor</th>
                         <th class="col-divider-right">Total</th>
                         <th>Own</th>
                         <th>Vendor</th>
-                        <th class="col-divider-right">Total</th>
-                        <th>Cars</th>
-                        <th>Freight</th>
+                        <th>Total</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -1566,7 +1594,11 @@ def main():
                         <td class="text-right">₹{row['Own_F']/100000:.2f}</td>
                         <td class="text-right">₹{row['Vendor_F']/100000:.2f}</td>
                         <td class="text-right col-divider-right">₹{row['Total_F']/100000:.2f}</td>
-                        <td class="text-center">{row['Cars_Comp']}</td>
+                        <td class="text-center">{row['Own_Comp']}</td>
+                        <td class="text-center">{row['Vendor_Comp']}</td>
+                        <td class="text-center col-divider-right">{row['Cars_Comp']}</td>
+                        <td class="text-right">₹{row['Own_Comp_F']/100000:.2f}</td>
+                        <td class="text-right">₹{row['Vendor_Comp_F']/100000:.2f}</td>
                         <td class="text-right">₹{row['Freight_Comp']/100000:.2f}</td>
                     </tr>
                 """
@@ -1585,12 +1617,12 @@ def main():
             # Add Avg Per Day row
             html_table += f"""
                     <tr class="summary-row">
-                        <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Avg Per Day >></td>
-                        <td colspan="3" class="text-center" style="color: {avg_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{avg_per_day:.2f} L</td>
+                        <td colspan="8" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Avg Per Day >></td>
+                        <td colspan="6" class="text-center" style="color: {avg_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{avg_per_day:.2f} L</td>
                     </tr>
                     <tr class="summary-row">
-                        <td colspan="7" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Shortfall from Till {compare_date} >></td>
-                        <td colspan="3" class="text-center" style="color: {shortfall_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{shortfall:.2f} L</td>
+                        <td colspan="8" class="text-center" style="color: #ffffff; font-weight: bold; padding: 10px; background-color: #0f172a;">Shortfall from Till {compare_date} >></td>
+                        <td colspan="6" class="text-center" style="color: {shortfall_color}; font-weight: bold; padding: 10px; background-color: #0f172a;">₹{shortfall:.2f} L</td>
                     </tr>
                 </tbody>
             </table>
@@ -1598,7 +1630,7 @@ def main():
             """
 
             # Calculate dynamic height based on number of rows + summary rows
-            table_height = 100 + (len(final_rows) * 35) + 100
+            table_height = 140 + (len(final_rows) * 35) + 100
             components.html(html_table, height=table_height, scrolling=False)
 
             # ── Vendor-Wise Summary Table ──────────────────────────────────
