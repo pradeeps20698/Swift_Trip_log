@@ -2477,6 +2477,7 @@ def main():
 
             # Pre-load ALL vehicle types once at the start for better performance
             all_vehicles = load_all_vehicles_by_type()
+            toyota_vehicles = all_vehicles.get('Toyota DC', [])
             kia_vehicles = all_vehicles.get('KIA/HYUNDAI LOCAL', [])
             mh_local_vehicles = all_vehicles.get('MH LOCAL NEW', [])
             kia_ap_vehicles = all_vehicles.get('TR_KIA_AP PASSING', [])
@@ -2488,15 +2489,12 @@ def main():
             road_pilot_vehicles = all_vehicles.get('Road Pilot', [])
             sanjeev_mishra_vehicles = all_vehicles.get('Sanjeev Mishra pilot', [])
 
-            # Manual override: force these two vehicles into Patna Local regardless of
-            # their vehicle_type in the DB (they are tagged 'Sanjeev Mishra pilot').
-            _patna_override = ['0986 GJ08AU', '0722 GJ08AU']
-            sanjeev_mishra_vehicles = [v for v in sanjeev_mishra_vehicles if v not in _patna_override]
-            patna_vehicles = patna_vehicles + [v for v in _patna_override if v not in patna_vehicles]
-
             # Create filter functions for each category (using pre-loaded vehicle lists)
             def get_toyota_local(data):
-                return data[data['NewPartyName'].str.contains('DC Movement', case=False, na=False)]
+                if not toyota_vehicles:
+                    return data.head(0)
+                pattern = '|'.join([v.replace(' ', '.*') for v in toyota_vehicles])
+                return data[data['VehicleNo'].str.contains(pattern, case=False, na=False, regex=True)]
 
             def get_patna_local(data):
                 if not patna_vehicles:
@@ -2565,25 +2563,20 @@ def main():
                 (month_df['CarQty'] > 0)
             ]
 
-            # Driver-based categories take priority (Sanjeev Mishra pilot, AICCP).
-            # Compute them first, then exclude their trips from all vehicle-based
-            # categories so no trip is double-counted / overlaps across categories.
+            # Driver-name based categories (computed independently from the full loaded set)
             sanjeev_mishra_pilot = get_sanjeev_mishra_pilot(loaded_month_df)
             aiccp_local = get_aiccp_local(loaded_month_df)
 
-            driver_based_idx = set(sanjeev_mishra_pilot.index) | set(aiccp_local.index)
-            vehicle_month_df = loaded_month_df.drop(index=driver_based_idx, errors='ignore')
-
-            # Get data for vehicle-based categories (driver-based trips excluded)
-            toyota_local = get_toyota_local(vehicle_month_df)
-            patna_local = get_patna_local(vehicle_month_df)
-            haridwar_local = get_haridwar_local(vehicle_month_df)
-            road_pilot = get_road_pilot(vehicle_month_df)
-            kia_local = get_kia_local(vehicle_month_df)
-            mh_local = get_mh_local(vehicle_month_df)
-            kia_ap_passing = get_kia_ap_passing(vehicle_month_df)
-            gujarat_local = get_gujarat_local(vehicle_month_df)
-            nsk_ckn_local = get_nsk_ckn_local(vehicle_month_df)
+            # Vehicle_type based categories (computed independently from the full loaded set)
+            toyota_local = get_toyota_local(loaded_month_df)
+            patna_local = get_patna_local(loaded_month_df)
+            haridwar_local = get_haridwar_local(loaded_month_df)
+            road_pilot = get_road_pilot(loaded_month_df)
+            kia_local = get_kia_local(loaded_month_df)
+            mh_local = get_mh_local(loaded_month_df)
+            kia_ap_passing = get_kia_ap_passing(loaded_month_df)
+            gujarat_local = get_gujarat_local(loaded_month_df)
+            nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
 
             # Summary data for all categories (including unique vehicle count)
             def get_summary(df, category_name):
@@ -2599,81 +2592,93 @@ def main():
                     'AvgFreight': avg_freight
                 }
 
-            summary_data = [
+            # Vehicle_type based summary (Toyota, Patna, KIA/HYUNDAI, MH)
+            vehicle_summary_data = [
                 get_summary(toyota_local, 'Toyota Local'),
                 get_summary(patna_local, 'Patna Local'),
                 get_summary(kia_local, 'KIA/HYUNDAI LOCAL'),
                 get_summary(mh_local, 'MH Local'),
+            ]
+
+            # Driver-name based summary (Sanjeev Mishra pilot, AICCP)
+            driver_summary_data = [
                 get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot (Based on Driver name)'),
-                get_summary(nsk_ckn_local, 'NSK/Ckn-north dedicated'),
                 get_summary(aiccp_local, 'AICCP (Based on Driver name)'),
             ]
 
+            def build_summary_table(summary_data):
+                summary_html = """
+                <style>
+                    .summary-local { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; margin-bottom: 20px; }
+                    .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #64748b; }
+                    .summary-local td { padding: 10px; border: 1px solid #64748b; color: white; text-align: center; }
+                    .summary-local tr:nth-child(even) { background-color: #1e293b; }
+                    .summary-local tr:nth-child(odd) { background-color: #0f172a; }
+                    .summary-local .total-row { background-color: #1e3a5f !important; font-weight: bold; }
+                    .summary-local .total-row td { border: 1px solid #64748b; }
+                </style>
+                <table class="summary-local">
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>Total Trips</th>
+                            <th>Cars Lifted</th>
+                            <th>No. of Vehicles</th>
+                            <th>Freight</th>
+                            <th>Avg Freight</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                """
+                total_trips = 0
+                total_cars = 0
+                total_vehicles = 0
+                total_freight = 0
+                for item in summary_data:
+                    total_trips += item['Trips']
+                    total_cars += item['Cars']
+                    total_vehicles += item['Vehicles']
+                    total_freight += item['Freight']
+                    summary_html += f"""
+                        <tr>
+                            <td style="text-align: left; font-weight: bold;">{item['Category']}</td>
+                            <td>{item['Trips']}</td>
+                            <td>{item['Cars']}</td>
+                            <td>{item['Vehicles']}</td>
+                            <td>₹{item['Freight']/100000:.2f}L</td>
+                            <td>₹{item['AvgFreight']/100000:.2f}L</td>
+                        </tr>
+                    """
+                # Calculate grand total avg freight
+                grand_avg_freight = total_freight / total_vehicles if total_vehicles > 0 else 0
+                summary_html += f"""
+                        <tr class="total-row">
+                            <td style="text-align: left;">Grand Total</td>
+                            <td style="color: #fbbf24;">{total_trips}</td>
+                            <td style="color: #fbbf24;">{total_cars}</td>
+                            <td style="color: #fbbf24;">{total_vehicles}</td>
+                            <td style="color: #fbbf24;">₹{total_freight/100000:.2f}L</td>
+                            <td style="color: #fbbf24;">₹{grand_avg_freight/100000:.2f}L</td>
+                        </tr>
+                    </tbody>
+                </table>
+                """
+                return summary_html
+
             # Summary Section
             st.markdown("#### Summary")
-            summary_html = """
-            <style>
-                .summary-local { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; margin-bottom: 20px; }
-                .summary-local th { background-color: #1e3a5f; color: white; padding: 12px; text-align: center; border: 1px solid #64748b; }
-                .summary-local td { padding: 10px; border: 1px solid #64748b; color: white; text-align: center; }
-                .summary-local tr:nth-child(even) { background-color: #1e293b; }
-                .summary-local tr:nth-child(odd) { background-color: #0f172a; }
-                .summary-local .total-row { background-color: #1e3a5f !important; font-weight: bold; }
-                .summary-local .total-row td { border: 1px solid #64748b; }
-            </style>
-            <table class="summary-local">
-                <thead>
-                    <tr>
-                        <th>Category</th>
-                        <th>Total Trips</th>
-                        <th>Cars Lifted</th>
-                        <th>No. of Vehicles</th>
-                        <th>Freight</th>
-                        <th>Avg Freight</th>
-                    </tr>
-                </thead>
-                <tbody>
-            """
-            total_trips = 0
-            total_cars = 0
-            total_vehicles = 0
-            total_freight = 0
-            for item in summary_data:
-                total_trips += item['Trips']
-                total_cars += item['Cars']
-                total_vehicles += item['Vehicles']
-                total_freight += item['Freight']
-                summary_html += f"""
-                    <tr>
-                        <td style="text-align: left; font-weight: bold;">{item['Category']}</td>
-                        <td>{item['Trips']}</td>
-                        <td>{item['Cars']}</td>
-                        <td>{item['Vehicles']}</td>
-                        <td>₹{item['Freight']/100000:.2f}L</td>
-                        <td>₹{item['AvgFreight']/100000:.2f}L</td>
-                    </tr>
-                """
-            # Calculate grand total avg freight
-            grand_avg_freight = total_freight / total_vehicles if total_vehicles > 0 else 0
-            summary_html += f"""
-                    <tr class="total-row">
-                        <td style="text-align: left;">Grand Total</td>
-                        <td style="color: #fbbf24;">{total_trips}</td>
-                        <td style="color: #fbbf24;">{total_cars}</td>
-                        <td style="color: #fbbf24;">{total_vehicles}</td>
-                        <td style="color: #fbbf24;">₹{total_freight/100000:.2f}L</td>
-                        <td style="color: #fbbf24;">₹{grand_avg_freight/100000:.2f}L</td>
-                    </tr>
-                </tbody>
-            </table>
-            """
-            components.html(summary_html, height=580)
+
+            st.markdown("**Vehicle Type Based**")
+            components.html(build_summary_table(vehicle_summary_data), height=(len(vehicle_summary_data) + 2) * 48 + 40)
+
+            st.markdown("**Driver Name Based**")
+            components.html(build_summary_table(driver_summary_data), height=(len(driver_summary_data) + 2) * 48 + 40)
 
             # Filter dropdown
             st.markdown("#### Details by Category")
             col_filter, col_download, col_empty = st.columns([1, 0.5, 2.5])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'KIA/HYUNDAI LOCAL', 'MH Local', 'Sanjeev Mishra pilot', 'NSK/Ckn-north dedicated', 'AICCP']
+                category_options = ['Toyota Local', 'Patna Local', 'KIA/HYUNDAI LOCAL', 'MH Local', 'Sanjeev Mishra pilot', 'AICCP']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -2687,8 +2692,6 @@ def main():
                 filtered_df = mh_local
             elif selected_category == 'Sanjeev Mishra pilot':
                 filtered_df = sanjeev_mishra_pilot
-            elif selected_category == 'NSK/Ckn-north dedicated':
-                filtered_df = nsk_ckn_local
             else:
                 filtered_df = aiccp_local
 
