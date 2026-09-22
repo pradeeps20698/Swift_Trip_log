@@ -2579,15 +2579,18 @@ def main():
             nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
 
             # Summary data for all categories (including unique vehicle count)
-            def get_summary(df, category_name):
-                vehicles = df['VehicleNo'].nunique() if len(df) > 0 else 0
+            def get_summary(df, category_name, count_by='vehicle'):
+                if count_by == 'driver':
+                    count = df['DriverName'].nunique() if len(df) > 0 else 0
+                else:
+                    count = df['VehicleNo'].nunique() if len(df) > 0 else 0
                 freight = df['Freight'].sum()
-                avg_freight = freight / vehicles if vehicles > 0 else 0
+                avg_freight = freight / count if count > 0 else 0
                 return {
                     'Category': category_name,
                     'Trips': len(df),
                     'Cars': int(df['CarQty'].sum()),
-                    'Vehicles': vehicles,
+                    'Vehicles': count,
                     'Freight': freight,
                     'AvgFreight': avg_freight
                 }
@@ -2602,11 +2605,11 @@ def main():
 
             # Driver-name based summary (Sanjeev Mishra pilot, AICCP)
             driver_summary_data = [
-                get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot (Based on Driver name)'),
-                get_summary(aiccp_local, 'AICCP (Based on Driver name)'),
+                get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot (Based on Driver name)', count_by='driver'),
+                get_summary(aiccp_local, 'AICCP (Based on Driver name)', count_by='driver'),
             ]
 
-            def build_summary_table(summary_data):
+            def build_summary_table(summary_data, count_label='No. of Vehicles', avg_label='Avg Freight'):
                 summary_html = """
                 <style>
                     .summary-local { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; margin-bottom: 20px; }
@@ -2623,9 +2626,9 @@ def main():
                             <th>Category</th>
                             <th>Total Trips</th>
                             <th>Cars Lifted</th>
-                            <th>No. of Vehicles</th>
+                            <th>""" + count_label + """</th>
                             <th>Freight</th>
-                            <th>Avg Freight</th>
+                            <th>""" + avg_label + """</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -2672,7 +2675,7 @@ def main():
             components.html(build_summary_table(vehicle_summary_data), height=(len(vehicle_summary_data) + 2) * 48 + 40)
 
             st.markdown("**Driver Name Based**")
-            components.html(build_summary_table(driver_summary_data), height=(len(driver_summary_data) + 2) * 48 + 40)
+            components.html(build_summary_table(driver_summary_data, count_label='No. of Drivers', avg_label='Avg Freight per Driver'), height=(len(driver_summary_data) + 2) * 48 + 40)
 
             # Filter dropdown
             st.markdown("#### Details by Category")
