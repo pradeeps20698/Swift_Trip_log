@@ -377,9 +377,6 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'Tata Motors Passenger Vehicles Limited - Sanand': 'Tata Motors Pvt Ltd - Sanand',
         'Tata Passenger Electric Mobility Limited - Pune': 'Tata Motors Pvt Ltd - Pune',
         'JSW MG Motor India Private Limited': 'JSW MG Motor India Private Limited',
-        'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY) BLR': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
-        'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED-MAHARASHTRA': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
-        'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED-HARYANA': 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)',
         'M/S Mohan Logistics Private  Limited': 'M/S Mohan Logistics Private Limited',
         'SAI AUTO COMPONENTS PVT.LTD': 'SAI AUTO COMPONENTS PVT.LTD',
         'John Deere india Private Limited': 'John Deere India Private Limited',
@@ -389,6 +386,10 @@ def get_vendor_client_mapping(billing_party, origin=None):
         'shiv ansh logistics': 'Market Load',
         'Delhi Hubli Cargo Logistics Pvt. Ltd.': 'Market Load',
     }
+
+    # Prefix match: all VALUEDRIVE (Spinny) region variants roll up to one party
+    if str(billing_party).upper().startswith('VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED'):
+        return 'VALUEDRIVE TECHNOLOGIES PRIVATE LIMITED(SPINNY)'
 
     # If billing_party matches a mapping, return it; otherwise default to Market Load
     return vendor_mappings.get(billing_party, 'Market Load')
@@ -1178,7 +1179,7 @@ def main():
                 yesterday = (datetime.now() - timedelta(days=1)).date()
                 till_date = st.date_input("Till Date", min(yesterday, month_end.date()))
             with col3:
-                compare_month = st.date_input("Compare With Month", datetime(2026, 8, 1).date())
+                compare_month = st.date_input("Compare With Month", datetime(2026, 9, 1).date())
             with col4:
                 compare_till_date = st.date_input("Compare Till Date", (pd.to_datetime(compare_month) + timedelta(days=till_date.day - 1)).date())
 
