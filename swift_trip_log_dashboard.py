@@ -2580,9 +2580,14 @@ def main():
             nsk_ckn_local = get_nsk_ckn_local(loaded_month_df)
 
             # Summary data for all categories (including unique vehicle count)
-            def get_summary(df, category_name, count_by='vehicle'):
+            # For vehicle_type based rows, No. of Vehicles = fleet size mapped to that
+            # vehicle_type in swift_vehicles (pass fleet_vehicles); otherwise fall back
+            # to unique vehicles that actually ran trips.
+            def get_summary(df, category_name, count_by='vehicle', fleet_vehicles=None):
                 if count_by == 'driver':
                     count = df['DriverName'].nunique() if len(df) > 0 else 0
+                elif fleet_vehicles is not None:
+                    count = len(fleet_vehicles)
                 else:
                     count = df['VehicleNo'].nunique() if len(df) > 0 else 0
                 freight = df['Freight'].sum()
@@ -2598,10 +2603,10 @@ def main():
 
             # Vehicle_type based summary (Toyota, Patna, KIA/HYUNDAI, MH)
             vehicle_summary_data = [
-                get_summary(toyota_local, 'Toyota Local'),
-                get_summary(patna_local, 'Patna Local'),
-                get_summary(kia_local, 'KIA/HYUNDAI LOCAL'),
-                get_summary(mh_local, 'MH Local'),
+                get_summary(toyota_local, 'Toyota Local', fleet_vehicles=toyota_vehicles),
+                get_summary(patna_local, 'Patna Local', fleet_vehicles=patna_vehicles),
+                get_summary(kia_local, 'KIA/HYUNDAI LOCAL', fleet_vehicles=kia_vehicles),
+                get_summary(mh_local, 'MH Local', fleet_vehicles=mh_local_vehicles),
             ]
 
             # Driver-name based summary (Sanjeev Mishra pilot, AICCP)
