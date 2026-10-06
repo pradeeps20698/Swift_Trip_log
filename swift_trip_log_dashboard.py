@@ -277,6 +277,27 @@ def load_vehicles_by_type(vehicle_type):
 
 
 @st.cache_data(ttl=3600)
+def load_active_driver_count(guarantor):
+    """Count active drivers (status_name = 'On Vehicle') for a given guarantor
+    from swift_drivers. Used for driver-name based summary rows."""
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            return 0
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM swift_drivers WHERE status_name = 'On Vehicle' AND guarantor = %s",
+            (guarantor,)
+        )
+        count = cursor.fetchone()[0]
+        conn.close()
+        return int(count or 0)
+    except Exception as e:
+        st.error(f"Error loading active driver count: {e}")
+        return 0
+
+
+@st.cache_data(ttl=3600)
 def load_all_vehicles_by_type():
     """Load all vehicle types in a single query and return dict keyed by type"""
     try:
@@ -2583,8 +2604,10 @@ def main():
             # For vehicle_type based rows, No. of Vehicles = fleet size mapped to that
             # vehicle_type in swift_vehicles (pass fleet_vehicles); otherwise fall back
             # to unique vehicles that actually ran trips.
-            def get_summary(df, category_name, count_by='vehicle', fleet_vehicles=None):
-                if count_by == 'driver':
+            def get_summary(df, category_name, count_by='vehicle', fleet_vehicles=None, count_override=None):
+                if count_override is not None:
+                    count = count_override
+                elif count_by == 'driver':
                     count = df['DriverName'].nunique() if len(df) > 0 else 0
                 elif fleet_vehicles is not None:
                     count = len(fleet_vehicles)
@@ -2610,9 +2633,13 @@ def main():
             ]
 
             # Driver-name based summary (Sanjeev Mishra pilot, AICCP)
+            # No. of Drivers = active drivers (status_name = 'On Vehicle') for the
+            # matching guarantor in swift_drivers, not just drivers that ran trips.
+            sanjeev_active_drivers = load_active_driver_count('Sanjeev Mishra Garunter')
+            aiccp_active_drivers = load_active_driver_count('AI CORPORATE COMPLIANCE PRIVATE LIMITED')
             driver_summary_data = [
-                get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot (Based on Driver name)', count_by='driver'),
-                get_summary(aiccp_local, 'AICCP (Based on Driver name)', count_by='driver'),
+                get_summary(sanjeev_mishra_pilot, 'Sanjeev Mishra pilot (Based on Driver name)', count_by='driver', count_override=sanjeev_active_drivers),
+                get_summary(aiccp_local, 'AICCP (Based on Driver name)', count_by='driver', count_override=aiccp_active_drivers),
             ]
 
             def build_summary_table(summary_data, count_label='No. of Vehicles', avg_label='Avg Freight'):
