@@ -2630,6 +2630,7 @@ def main():
                 get_summary(patna_local, 'Patna Local', fleet_vehicles=patna_vehicles),
                 get_summary(kia_local, 'KIA/HYUNDAI LOCAL', fleet_vehicles=kia_vehicles),
                 get_summary(mh_local, 'MH Local', fleet_vehicles=mh_local_vehicles),
+                get_summary(haridwar_local, 'HRD Local', fleet_vehicles=haridwar_vehicles),
             ]
 
             # Driver-name based summary (Sanjeev Mishra pilot, AICCP)
@@ -2714,7 +2715,7 @@ def main():
             st.markdown("#### Details by Category")
             col_filter, col_download, col_empty = st.columns([1, 0.5, 2.5])
             with col_filter:
-                category_options = ['Toyota Local', 'Patna Local', 'KIA/HYUNDAI LOCAL', 'MH Local', 'Sanjeev Mishra pilot', 'AICCP']
+                category_options = ['Toyota Local', 'Patna Local', 'KIA/HYUNDAI LOCAL', 'MH Local', 'HRD Local', 'Sanjeev Mishra pilot', 'AICCP']
                 selected_category = st.selectbox("Select Category", category_options, key='local_category')
 
             # Get filtered data based on selection
@@ -2726,6 +2727,8 @@ def main():
                 filtered_df = kia_local
             elif selected_category == 'MH Local':
                 filtered_df = mh_local
+            elif selected_category == 'HRD Local':
+                filtered_df = haridwar_local
             elif selected_category == 'Sanjeev Mishra pilot':
                 filtered_df = sanjeev_mishra_pilot
             else:
