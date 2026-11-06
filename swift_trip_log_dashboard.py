@@ -96,7 +96,8 @@ def get_db_connection():
             user=st.secrets["UserName"],
             password=st.secrets["Password"],
             port=st.secrets["Port"],
-            connect_timeout=10
+            connect_timeout=10,
+            options='-c statement_timeout=25000'  # fail any query after 25s instead of hanging forever
         )
         return conn
     except Exception as e:
